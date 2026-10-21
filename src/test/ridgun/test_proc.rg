@@ -1,9 +1,11 @@
--- test_proc.rg — Exhaustive Unit & E2E Binary Tests for Tier 3 BSD Process & Build Utilities
+-- test_proc.rg — Exhaustive Unit & E2E Binary Tests for Tier 3 BSD Process, Build & Socket Utilities
 -- @tests TS-PROC-001
 -- @tests TS-PROC-002
+-- @tests TS-PROC-003
 
 import test
 import io
+import socket
 import proc_lib
 
 fn :: test apply suite => ()
@@ -118,6 +120,50 @@ fn :: test pal io suite => ()
         _ = sys unlink "/tmp/ut_pal_io.txt"
         assert true (not (file exists "/tmp/ut_pal_io.txt")) "PAL posix/io: sys unlink removes file"
 
+fn :: test timeout and nc suite => ()
+      test timeout and nc suite =
+        nl = char from code 10
+        tab = char from code 9
+        _ = echo "=== 6. Testing BSD timeout(1) & nc(1) with io/socket Libraries (TS-PROC-003) ==="
+        _ = assert int equals (parse duration ms "250ms") 250 "timeout duration parser: 250ms"
+        _ = assert int equals (parse duration ms "2s") 2000 "timeout duration parser: 2s"
+        _ = assert int equals (parse duration ms "1m") 60000 "timeout duration parser: 1m"
+        _ = assert int equals (parse duration ms "1h") 3600000 "timeout duration parser: 1h"
+        ts_flags = parse timeout args ["-k", "120ms", "-s", "TERM", "--preserve-status", "50ms", "sleep", "2"]
+        _ = assert int equals (to_kill_ms ts_flags) 120 "AC1: timeout -k 120ms parses grace period"
+        _ = assert str eq (to_sig ts_flags) "TERM" "AC1: timeout -s TERM parses signal name"
+        _ = assert true (to_preserve ts_flags) "AC1: timeout --preserve-status sets preserve flag"
+        to_ok = execute timeout (parse timeout args ["1s", "echo", "fast_ok"])
+        _ = assert int equals (snd to_ok) 0 "AC1: timeout 1s echo fast_ok exits with 0"
+        _ = assert str eq (fst to_ok) ("fast_ok" + nl) "AC1: timeout 1s echo fast_ok captures output"
+        to_nonzero = execute timeout (parse timeout args ["2s", "sh", "-c", "exit 42"])
+        _ = assert int equals (snd to_nonzero) 42 "AC1: command exiting 42 before deadline propagates exact exit status 42 (not 124)"
+        to_exp = execute timeout (parse timeout args ["50ms", "sleep", "2"])
+        _ = assert int equals (snd to_exp) 124 "AC1: timeout 50ms sleep 2 times out with status 124"
+        nc_tr = nc loopback transfer "ping_ridgun" to "127.0.0.1" port 44123
+        _ = assert true (fst nc_tr) "AC2: nc loopback transfer over socket.rglib succeeds"
+        _ = assert str eq (snd nc_tr) "ping_ridgun" "AC2: nc loopback transfer preserves payload"
+        multi_payload = "hdr:1" + tab + "val" + nl + "line2:ok" + nl
+        nc_tr2 = nc loopback transfer multi_payload to "127.0.0.1" port 44125
+        _ = assert true (fst nc_tr2) "AC2: nc loopback transfer handles multi-line + tab payload"
+        _ = assert str eq (snd nc_tr2) multi_payload "AC2: nc loopback transfer preserves multi-line payload byte-for-byte"
+        _ = sys tcp listen "127.0.0.1" 44124 4
+        nc_z = execute nc (parse nc args ["-zv", "127.0.0.1", "44124"]) with ""
+        _ = assert int equals (fst nc_z) 0 "AC2: nc -zv 127.0.0.1 44124 succeeds against active listener"
+        nc_closed = execute nc (parse nc args ["-zv", "-w", "1", "127.0.0.1", "44199"]) with ""
+        _ = assert false (check eq (fst nc_closed) 0) "AC2: nc -zv against closed port 44199 returns non-zero"
+        _ = assert true (str contains (snd nc_closed) "failed") "AC2: nc -zv against closed port emits failure diagnostic"
+        nc_bad_port = execute nc (parse nc args ["-z", "127.0.0.1", "0"]) with ""
+        _ = assert int equals (fst nc_bad_port) 1 "AC2: nc rejects invalid port 0 with status 1"
+        rc_to_bin = shell exec "./target/timeout 1s echo bin_ok > /tmp/ut_to_bin.out"
+        _ = assert int equals rc_to_bin 0 "E2E binary: target/timeout 1s echo bin_ok exits 0"
+        _ = assert str eq (read file "/tmp/ut_to_bin.out") ("bin_ok" + nl) "E2E binary: target/timeout emits stdout"
+        _ = sys unlink "/tmp/ut_to_bin.out"
+        rc_nc_bin = shell exec "./target/nc -zv 127.0.0.1 44124 > /tmp/ut_nc_bin.out"
+        _ = assert int equals rc_nc_bin 0 "E2E binary: target/nc -zv 127.0.0.1 44124 exits 0"
+        _ = sys unlink "/tmp/ut_nc_bin.out"
+        ()
+
 fn :: main => ()
       main =
         _ = test apply suite
@@ -125,4 +171,5 @@ fn :: main => ()
         _ = test sh suite
         _ = test proc e2e suite
         _ = test pal io suite
-        echo "All 41 Tier 3 BSD Process, Build & PAL I/O (apply, make, sh, posix, io) unit & E2E assertions passed!"
+        _ = test timeout and nc suite
+        echo "All 63 Tier 3 BSD Process, Build, PAL I/O & Socket (apply, make, sh, timeout, nc) assertions passed!"

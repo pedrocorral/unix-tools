@@ -1,7 +1,9 @@
--- sec_lib.rg — Pure Ridgun OpenBSD doas(1) & doas.conf(5) Security Policy Engine
+-- sec_lib.rg — Pure Ridgun OpenBSD doas(1), doas.conf(5) & BSD sha256(1) Security Library
 -- @implements FR-SEC-001
+-- @implements FR-SEC-002
 
 import posix
+import crypto
 
 -- ============================================================================
 -- Algebraic Data Types (ADTs)
@@ -16,6 +18,8 @@ type DoasParseResult = DParseOk [DoasRule] | DParseErr Int String
 type DoasDecision = DecDeny | DecPermit Bool DoasRule
 
 type DoasSpec = d_check_conf: String, d_target_user: String, d_non_interactive: Bool, d_cmd: String, d_cmd_args: [String]
+
+type Sha256Spec = sh_quiet: Bool, sh_reverse: Bool, sh_has_str: Bool, sh_str: String, sh_key: String, sh_argon_salt: String, sh_verify_phc: String, sh_files: [String]
 
 -- ============================================================================
 -- Foundational String & List Helpers
@@ -340,3 +344,105 @@ fn :: switch if valid ids Int Int => Int
           _ = sys setresgid t_gid
           _ = sys setgroups [t_gid]
           sys setresuid t_uid
+
+-- ============================================================================
+-- 5. BSD sha256(1) Cryptographic Digest, HMAC-SHA256 & Argon2id (FR-SEC-002)
+-- ============================================================================
+
+fn :: default_sha256_spec => Sha256Spec
+      default_sha256_spec =  Sha256Spec False False False "" "" "" "" []
+
+fn :: parse_sha256_loop [String]      Sha256Spec => Sha256Spec
+      parse_sha256_loop []            spec       =  spec
+      parse_sha256_loop ("-q":rest)   spec       =  parse_sha256_loop rest (spec with sh_quiet: True)
+      parse_sha256_loop ("-r":rest)   spec       =  parse_sha256_loop rest (spec with sh_reverse: True)
+      parse_sha256_loop ("-qr":rest)  spec       =  parse_sha256_loop rest (spec with sh_quiet: True, sh_reverse: True)
+      parse_sha256_loop ("-rq":rest)  spec       =  parse_sha256_loop rest (spec with sh_quiet: True, sh_reverse: True)
+      parse_sha256_loop ("-s":s:rest) spec       =  parse_sha256_loop rest (spec with sh_has_str: True, sh_str: s)
+      parse_sha256_loop ("-k":k:rest) spec       =  parse_sha256_loop rest (spec with sh_key: k)
+      parse_sha256_loop ("--argon2id":s:rest) spec = parse_sha256_loop rest (spec with sh_argon_salt: s)
+      parse_sha256_loop ("--verify":p:rest) spec =  parse_sha256_loop rest (spec with sh_verify_phc: p)
+      parse_sha256_loop (f:rest)      spec       =  parse_sha256_loop rest (spec with sh_files: (sh_files spec) :: [f])
+
+op :: parse sha256 args [String] => Sha256Spec
+      parse sha256 args args     =  parse_sha256_loop args default_sha256_spec
+
+fn :: compute_digest_for Sha256Spec String => String
+      compute_digest_for spec       data   =
+        | (str len (sh_argon_salt spec)) > 0 = argon2id hash data (sh_argon_salt spec) 64 2 1
+        | (str len (sh_key spec)) > 0        = bytes to hex str (hmac sha256 (sh_key spec) data)
+        | otherwise                          = sha256 hex data
+
+fn :: algo_label Sha256Spec => String
+      algo_label spec       =
+        | (str len (sh_key spec)) > 0 = "HMAC-SHA256"
+        | otherwise                   = "SHA256"
+
+fn :: format_sha256_entry Sha256Spec String String Bool   => String
+      format_sha256_entry spec       label  digest is_str =
+        | sh_quiet spec                    = digest
+        | (sh_reverse spec) and is_str     = digest + " \"" + label + "\""
+        | sh_reverse spec                  = digest + "  " + label
+        | is_str                           = (algo_label spec) + " (\"" + label + "\") = " + digest
+        | otherwise                        = (algo_label spec) + " (" + label + ") = " + digest
+
+fn :: file_readable_check String => Bool
+      file_readable_check path   =
+        fd = posix open path (o rdonly) 0
+        close_if_valid_fd fd
+
+fn :: close_if_valid_fd Int => Bool
+      close_if_valid_fd fd  =
+        | fd < 0    = False
+        | otherwise =
+          _ = posix close fd
+          True
+
+fn :: eval_one_sha256_file Sha256Spec String => (Int, String)
+      eval_one_sha256_file spec       f      =
+        | not (file_readable_check f) = (1, "sha256: " + f + ": No such file or directory")
+        | otherwise                   =
+          data = read file f
+          dig = compute_digest_for spec data
+          (0, format_sha256_entry spec f dig False)
+
+fn :: merge_sha256_rc Int Int => Int
+      merge_sha256_rc a   b   =
+        | a != 0    = a
+        | otherwise = b
+
+fn :: eval_sha256_files Sha256Spec [String] Int [String] => (Int, [String])
+      eval_sha256_files _          []       rc  acc      =  (rc, acc)
+      eval_sha256_files spec       (f:rest) rc  acc      =
+        one = eval_one_sha256_file spec f
+        eval_sha256_files spec rest (merge_sha256_rc rc (fst one)) (acc :: [snd one])
+
+fn :: verify_sha256_phc Sha256Spec String     => (Int, String)
+      verify_sha256_phc spec       stdin_data =
+        | argon2id verify (select_sha256_input spec stdin_data) (sh_verify_phc spec) = (0, "OK")
+        | otherwise                                                                  = (1, "FAILED")
+
+fn :: finish_sha256_files (Int, [String]) => (Int, String)
+      finish_sha256_files (rc, lines)     =
+        (rc, join_sec_lines lines (char from code 10))
+
+op :: evaluate sha256 Sha256Spec with String     => (Int, String)
+      evaluate sha256 spec       with stdin_data =
+        | (str len (sh_verify_phc spec)) > 0     = verify_sha256_phc spec stdin_data
+        | sh_has_str spec                        = (0, format_sha256_entry spec (sh_str spec) (compute_digest_for spec (sh_str spec)) True)
+        | (sec_str_list_len (sh_files spec)) > 0 = finish_sha256_files (eval_sha256_files spec (sh_files spec) 0 [])
+        | otherwise                              = (0, compute_digest_for spec stdin_data)
+
+fn :: select_sha256_input Sha256Spec String     => String
+      select_sha256_input spec       stdin_data =
+        | sh_has_str spec = sh_str spec
+        | otherwise       = stdin_data
+
+fn :: sec_str_list_len [String] => Int
+      sec_str_list_len []       =  0
+      sec_str_list_len (_:rest) =  1 + (sec_str_list_len rest)
+
+fn :: join_sec_lines [String] String => String
+      join_sec_lines []       _      =  ""
+      join_sec_lines (x:[])   _      =  x
+      join_sec_lines (x:xs)   sep    =  x + sep + (join_sec_lines xs sep)

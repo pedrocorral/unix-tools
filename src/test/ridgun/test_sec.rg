@@ -1,8 +1,10 @@
--- test_sec.rg — Exhaustive Unit & E2E Binary Tests for Tier 4 OpenBSD doas(1) & doas.conf(5)
+-- test_sec.rg — Exhaustive Unit & E2E Binary Tests for Tier 4 OpenBSD doas(1), doas.conf(5) & BSD sha256(1)
 -- @tests TS-SEC-002
+-- @tests TS-SEC-003
 
 import test
 import posix
+import crypto
 import sec_lib
 
 fn :: unwrap rules DoasParseResult  => [DoasRule]
@@ -74,9 +76,49 @@ fn :: test doas e2e suite => ()
         _ = shell exec "rm -f /tmp/ut_doas_good.conf /tmp/ut_doas_bad.conf /tmp/ut_doas_c1.out /tmp/ut_doas_c2.out /tmp/ut_doas_q1.out /tmp/ut_doas_q2.out /tmp/ut_doas_q3.out"
         ()
 
+fn :: test sha256 suite => ()
+      test sha256 suite =
+        nl = char from code 10
+        _ = echo "=== 4. Testing BSD sha256(1) Digest, HMAC-SHA256 & Argon2id with crypto.rglib (TS-SEC-003) ==="
+        r1 = evaluate sha256 (parse sha256 args ["-s", "abc"]) with ""
+        _ = assert str eq (snd r1) "SHA256 (\"abc\") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" "AC1: sha256 -s abc BSD tag format"
+        r_q = evaluate sha256 (parse sha256 args ["-q", "-s", "abc"]) with ""
+        _ = assert str eq (snd r_q) "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" "AC1: sha256 -q -s abc quiet hex digest"
+        r_rev = evaluate sha256 (parse sha256 args ["-r", "-s", "abc"]) with ""
+        _ = assert str eq (snd r_rev) "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad \"abc\"" "AC1: sha256 -r -s abc reversed output format"
+        r_empty = evaluate sha256 (parse sha256 args ["-q", "-s", ""]) with ""
+        _ = assert str eq (snd r_empty) "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" "AC1: sha256 NIST FIPS 180-4 empty string vector"
+        r_multiblock = evaluate sha256 (parse sha256 args ["-q", "-s", "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"]) with ""
+        _ = assert str eq (snd r_multiblock) "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1" "AC1: sha256 NIST multi-block (>512-bit boundary) vector"
+        r_missing = evaluate sha256 (parse sha256 args ["/tmp/nonexistent_ut_sha256_file.bin"]) with ""
+        _ = assert int equals (fst r_missing) 1 "AC1: sha256 returns exit code 1 when input file is missing"
+        _ = assert true (str contains (snd r_missing) "No such file or directory") "AC1: sha256 reports missing file diagnostic"
+        r_hmac = evaluate sha256 (parse sha256 args ["-q", "-k", "key", "-s", "The quick brown fox jumps over the lazy dog"]) with ""
+        _ = assert str eq (snd r_hmac) "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8" "AC2: sha256 -q -k key -s '...' RFC HMAC-SHA256 vector"
+        r_arg = evaluate sha256 (parse sha256 args ["-q", "--argon2id", "saltsalt", "-s", "correcthorse"]) with ""
+        phc = snd r_arg
+        _ = assert true (str starts with phc "$argon2id$v=19$m=64,t=2,p=1$") "AC2: sha256 --argon2id emits Argon2id PHC string"
+        r_ver_ok = evaluate sha256 (parse sha256 args ["--verify", phc, "-s", "correcthorse"]) with ""
+        _ = assert int equals (fst r_ver_ok) 0 "AC2: sha256 --verify accepts matching password"
+        r_ver_bad = evaluate sha256 (parse sha256 args ["--verify", phc, "-s", "wrongpass"]) with ""
+        _ = assert int equals (fst r_ver_bad) 1 "AC2: sha256 --verify rejects wrong password"
+        tampered_phc = (str slice phc 0 ((str len phc) - 1)) + "X"
+        r_ver_tampered = evaluate sha256 (parse sha256 args ["--verify", tampered_phc, "-s", "correcthorse"]) with ""
+        _ = assert false (check eq (fst r_ver_tampered) 0) "AC2: sha256 --verify rejects tampered Argon2id PHC hash"
+        rc_sha_bin = shell exec "./target/sha256 -q -s abc > /tmp/ut_sha256_bin.out"
+        _ = assert int equals rc_sha_bin 0 "E2E binary: target/sha256 -q -s abc exits 0"
+        _ = assert str eq (read file "/tmp/ut_sha256_bin.out") ("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" + nl) "E2E binary: target/sha256 outputs exact SHA-256 hex"
+        rc_sha_pipe = shell exec "printf 'abc' | ./target/sha256 -q > /tmp/ut_sha256_pipe.out"
+        _ = assert int equals rc_sha_pipe 0 "E2E binary: printf 'abc' | target/sha256 -q reads fd 0 via posix read"
+        _ = assert str eq (read file "/tmp/ut_sha256_pipe.out") ("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" + nl) "E2E binary: stdin pipeline SHA-256 matches -s abc"
+        _ = sys unlink "/tmp/ut_sha256_bin.out"
+        _ = sys unlink "/tmp/ut_sha256_pipe.out"
+        ()
+
 fn :: main => ()
       main =
         _ = test doas parser suite
         _ = test doas policy suite
         _ = test doas e2e suite
-        echo "All 21 Tier 4 OpenBSD doas(1) & doas.conf(5) unit & E2E assertions passed!"
+        _ = test sha256 suite
+        echo "All 38 Tier 4 BSD Security (doas, doas.conf, sha256) unit & E2E assertions passed!"

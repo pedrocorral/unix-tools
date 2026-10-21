@@ -193,7 +193,11 @@ fn :: test e2e binaries suite => ()
         _ = shell exec "./target/vis -w /tmp/ut_bin256.in > /tmp/ut_bin256.enc && ./target/unvis /tmp/ut_bin256.enc > /tmp/ut_bin256.dec"
         rc_bin256 = shell exec "cmp -s /tmp/ut_bin256.in /tmp/ut_bin256.dec"
         _ = assert int equals rc_bin256 0 "E2E binary: target/vis -w | target/unvis 0..255 raw binary roundtrip (NUL + high bytes)"
-        _ = shell exec "rm -f /tmp/ut_jot1.out /tmp/ut_rs.in /tmp/ut_rs.out /tmp/ut_lam_a.in /tmp/ut_lam_b.in /tmp/ut_lam.out /tmp/ut_lam_cap.out /tmp/ut_lam_colon.in /tmp/ut_lam_t.out /tmp/ut_vis.in /tmp/ut_vis1.enc /tmp/ut_vis1.dec /tmp/ut_vis2.enc /tmp/ut_vis2.dec /tmp/ut_vis3.enc /tmp/ut_vis3.dec /tmp/ut_import.in /tmp/ut_import.out /tmp/ut_no_nl.in /tmp/ut_crlf.in /tmp/ut_crlf.out /tmp/ut_bin256.in /tmp/ut_bin256.enc /tmp/ut_bin256.dec"
+        _ = shell exec "./target/jot 6 1 6 | ./target/rs 2 3 > /tmp/ut_jot_rs_pipe.out"
+        _ = assert str eq (read file "/tmp/ut_jot_rs_pipe.out") ("1  2  3" + nl + "4  5  6" + nl) "E2E pipeline: target/jot 6 1 6 | target/rs 2 3 via posix read fd 0"
+        _ = shell exec "./target/jot 3 1 3 | ./target/lam - -s ': ' /tmp/ut_lam_a.in > /tmp/ut_jot_lam_pipe.out"
+        _ = assert str eq (read file "/tmp/ut_jot_lam_pipe.out") ("1: alpha" + nl + "2: beta" + nl + "3: gamma" + nl) "E2E pipeline: target/jot 3 1 3 | target/lam - via posix read fd 0"
+        _ = shell exec "rm -f /tmp/ut_jot1.out /tmp/ut_rs.in /tmp/ut_rs.out /tmp/ut_lam_a.in /tmp/ut_lam_b.in /tmp/ut_lam.out /tmp/ut_lam_cap.out /tmp/ut_lam_colon.in /tmp/ut_lam_t.out /tmp/ut_vis.in /tmp/ut_vis1.enc /tmp/ut_vis1.dec /tmp/ut_vis2.enc /tmp/ut_vis2.dec /tmp/ut_vis3.enc /tmp/ut_vis3.dec /tmp/ut_import.in /tmp/ut_import.out /tmp/ut_no_nl.in /tmp/ut_crlf.in /tmp/ut_crlf.out /tmp/ut_bin256.in /tmp/ut_bin256.enc /tmp/ut_bin256.dec /tmp/ut_jot_rs_pipe.out /tmp/ut_jot_lam_pipe.out"
         ()
 
 fn :: main => ()
@@ -203,4 +207,4 @@ fn :: main => ()
         _ = test lam suite
         _ = test vis unvis suite
         _ = test e2e binaries suite
-        echo "All 81 Tier 1 BSD Filter unit & E2E binary assertions passed!"
+        echo "All 83 Tier 1 BSD Filter unit & E2E binary assertions passed!"

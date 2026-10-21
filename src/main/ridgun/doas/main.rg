@@ -2,6 +2,7 @@
 -- @implements FR-SEC-001
 
 import posix
+import crypto
 import sec_lib
 
 fn :: drop prog [String]    => [String]

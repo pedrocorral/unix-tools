@@ -2,6 +2,7 @@
 -- @implements FR-PROC-001
 
 import io
+import socket
 import proc_lib
 
 fn :: drop prog [String]    => [String]

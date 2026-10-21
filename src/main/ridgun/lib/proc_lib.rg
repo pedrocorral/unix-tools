@@ -1,8 +1,10 @@
--- proc_lib.rg — Pure Ridgun BSD Process & Build Library (apply, make, sh)
+-- proc_lib.rg — Pure Ridgun BSD Process, Build & Socket Library (apply, make, sh, timeout, nc)
 -- @implements FR-PROC-001
 -- @implements FR-PROC-002
+-- @implements FR-PROC-003
 
 import io
+import socket
 
 -- ============================================================================
 -- Algebraic Data Types (ADTs)
@@ -23,6 +25,10 @@ type ShNode = ShSimple [String] [Redir] | ShPipe ShNode ShNode | ShAnd ShNode Sh
 expand type ShNode = ShSubshell ShNode | ShIf ShNode ShNode ShNode | ShWhile ShNode ShNode | ShFor String [String] ShNode | ShAssign String String
 
 type ShEnv = env_vars: [MakeVar], env_pos: [String], env_status: Int, env_out: String, env_exited: Bool
+
+type TimeoutSpec = to_sig: String, to_kill_ms: Int, to_preserve: Bool, to_dur_ms: Int, to_cmd: String, to_args: [String]
+
+type NcSpec = nc_listen: Bool, nc_udp: Bool, nc_unix: Bool, nc_zero: Bool, nc_verbose: Bool, nc_timeout_ms: Int, nc_host: String, nc_port: Int, nc_unix_path: String
 
 -- ============================================================================
 -- Foundational Helpers
@@ -1070,3 +1076,179 @@ op :: run shell script String with [String] => (String, Int)
         init_env = ShEnv [] pos_args 0 "" False
         final_env = evaluate shell ast in init_env
         (env_out final_env, env_status final_env)
+
+-- ============================================================================
+-- 4. BSD timeout(1) Implementation (FR-PROC-003)
+-- ============================================================================
+
+fn :: parse_duration_len String Int => Int
+      parse_duration_len raw    len =
+        | len == 0 = 0
+        | (len > 2) and ((str_slice raw (len - 2) len) == "ms") = str_to_int (str_slice raw 0 (len - 2))
+        | (len > 1) and ((str_slice raw (len - 1) len) == "s")  = (str_to_int (str_slice raw 0 (len - 1))) * 1000
+        | (len > 1) and ((str_slice raw (len - 1) len) == "m")  = (str_to_int (str_slice raw 0 (len - 1))) * 60000
+        | (len > 1) and ((str_slice raw (len - 1) len) == "h")  = (str_to_int (str_slice raw 0 (len - 1))) * 3600000
+        | (len > 1) and ((str_slice raw (len - 1) len) == "d")  = (str_to_int (str_slice raw 0 (len - 1))) * 86400000
+        | otherwise = (str_to_int raw) * 1000
+
+op :: parse duration ms String => Int
+      parse duration ms raw    =  parse_duration_len raw (str_len raw)
+
+fn :: default_timeout_spec => TimeoutSpec
+      default_timeout_spec =  TimeoutSpec "TERM" 10 False 0 "" []
+
+fn :: parse_timeout_flags [String]           TimeoutSpec => TimeoutSpec
+      parse_timeout_flags []                 spec        =  spec
+      parse_timeout_flags ("--preserve-status":rs) spec  =  parse_timeout_flags rs (spec with to_preserve: True)
+      parse_timeout_flags ("-s":sig:rs)      spec        =  parse_timeout_flags rs (spec with to_sig: sig)
+      parse_timeout_flags ("-k":kdur:rs)     spec        =  parse_timeout_flags rs (spec with to_kill_ms: parse duration ms kdur)
+      parse_timeout_flags (dur:cmd:cmd_args) spec        =
+        spec with to_dur_ms: (parse duration ms dur), to_cmd: cmd, to_args: cmd_args
+      parse_timeout_flags (dur:[])           spec        =
+        spec with to_dur_ms: (parse duration ms dur)
+
+op :: parse timeout args [String] => TimeoutSpec
+      parse timeout args args     =  parse_timeout_flags args default_timeout_spec
+
+fn :: map_timeout_rc Int TimeoutSpec => Int
+      map_timeout_rc rc  spec        =
+        | ((rc == 124) or (rc == 137)) and (to_preserve spec) = rc
+        | (rc == 124) or (rc == 137)                          = 124
+        | rc > 255                                            = (rc / 256) % 256
+        | rc < 0                                              = 125
+        | otherwise                                           = rc
+
+fn :: quote_timeout_tok String => String
+      quote_timeout_tok s      =  "'" + s + "'"
+
+fn :: quote_timeout_list [String] => [String]
+      quote_timeout_list []       =  []
+      quote_timeout_list (x:xs)   =  [quote_timeout_tok x] :: (quote_timeout_list xs)
+
+op :: execute timeout TimeoutSpec => (String, Int)
+      execute timeout spec        =
+        | (str_len (to_cmd spec)) == 0 = ("", 125)
+        | (to_dur_ms spec) <= 0        = ("", 124)
+        | otherwise =
+          with timeout (to_dur_ms spec) do
+            pid = sys getpid
+            cap_file = "/tmp/.ut_timeout_cap_{pid}.out"
+            tspec = format timeout sec (to_dur_ms spec)
+            kspec = format timeout sec (to_kill_ms spec)
+            cmd_line = join_with (quote_timeout_list ([to_cmd spec] :: (to_args spec))) " "
+            rc = shell_exec ("timeout -s " + (to_sig spec) + " -k " + kspec + " " + tspec + " " + cmd_line + " > " + cap_file + " 2>&1")
+            out = read_file cap_file
+            _ = sys unlink cap_file
+            (out, map_timeout_rc rc spec)
+
+-- ============================================================================
+-- 5. BSD nc(1) Netcat Implementation (FR-PROC-003)
+-- ============================================================================
+
+fn :: default_nc_spec => NcSpec
+      default_nc_spec =  NcSpec False False False False False 2000 "127.0.0.1" 0 ""
+
+fn :: parse_nc_flags [String]        [String] NcSpec => NcSpec
+      parse_nc_flags []              pos      spec   =  finalize_nc_pos pos spec
+      parse_nc_flags ("-l":rest)     pos      spec   =  parse_nc_flags rest pos (spec with nc_listen: True)
+      parse_nc_flags ("-u":rest)     pos      spec   =  parse_nc_flags rest pos (spec with nc_udp: True)
+      parse_nc_flags ("-U":rest)     pos      spec   =  parse_nc_flags rest pos (spec with nc_unix: True)
+      parse_nc_flags ("-z":rest)     pos      spec   =  parse_nc_flags rest pos (spec with nc_zero: True)
+      parse_nc_flags ("-v":rest)     pos      spec   =  parse_nc_flags rest pos (spec with nc_verbose: True)
+      parse_nc_flags ("-zv":rest)    pos      spec   =  parse_nc_flags rest pos (spec with nc_zero: True, nc_verbose: True)
+      parse_nc_flags ("-vz":rest)    pos      spec   =  parse_nc_flags rest pos (spec with nc_zero: True, nc_verbose: True)
+      parse_nc_flags ("-w":sec:rest) pos      spec   =  parse_nc_flags rest pos (spec with nc_timeout_ms: (str_to_int sec) * 1000)
+      parse_nc_flags (arg:rest)      pos      spec   =  parse_nc_flags rest (pos :: [arg]) spec
+
+fn :: finalize_nc_pos [String] NcSpec => NcSpec
+      finalize_nc_pos []       spec   =  spec
+      finalize_nc_pos (p1:[])  spec   =
+        | nc_unix spec   = spec with nc_unix_path: p1
+        | nc_listen spec = spec with nc_port: str_to_int p1
+        | otherwise      = spec with nc_host: p1
+      finalize_nc_pos (h:p:_)  spec   =
+        spec with nc_host: h, nc_port: str_to_int p
+
+op :: parse nc args [String] => NcSpec
+      parse nc args args     =  parse_nc_flags args [] default_nc_spec
+
+fn :: unpack_sock_ok SockRes     => Socket
+      unpack_sock_ok (SockOk s)  =  s
+      unpack_sock_ok (SockErr _) =  sock tcp
+
+fn :: unpack_pair_cli SockPairRes        => Socket
+      unpack_pair_cli (SockPairOk cli _) =  cli
+      unpack_pair_cli (SockPairErr _)    =  sock tcp
+
+fn :: unpack_pair_srv SockPairRes        => Socket
+      unpack_pair_srv (SockPairOk _ srv) =  srv
+      unpack_pair_srv (SockPairErr _)    =  sock tcp
+
+fn :: unpack_recv_str SockRecvStrRes     => (Bool, String)
+      unpack_recv_str (SockStrOk _ text) =  (True, text)
+      unpack_recv_str (SockStrErr err)   =  (False, err)
+
+op :: nc loopback transfer String  to String port Int  => (Bool, String)
+      nc loopback transfer payload to host   port pnum =
+        addr_res = sock resolve host host pnum
+        nc_loopback_with_addr payload addr_res
+
+fn :: nc_loopback_with_addr String  SockAddrRes       => (Bool, String)
+      nc_loopback_with_addr _       (SockAddrErr msg) =  (False, msg)
+      nc_loopback_with_addr payload (SockAddrOk addr) =
+        srv0 = unpack_sock_ok (sock bind (sock tcp) addr)
+        srv_l = unpack_sock_ok (sock listen srv0 4)
+        pair1 = sock connect pair (sock tcp) srv_l
+        cli1 = unpack_pair_cli pair1
+        srv1 = unpack_pair_srv pair1
+        cli2 = unpack_sock_ok (sock send str cli1 payload)
+        pair2 = sock pipe transfer cli2 srv1
+        srv2 = unpack_pair_srv pair2
+        unpack_recv_str (sock recv str srv2 65536)
+
+fn :: format_nc_probe Int String Int  Bool  => (Int, String)
+      format_nc_probe 0   target port True  =
+        (0, "Connection to " + target + " " + (int_to_str port) + " port [tcp/*] succeeded!" + (char_from_code 10))
+      format_nc_probe 0   _      _    False =  (0, "")
+      format_nc_probe _   target port True  =
+        (1, "nc: connect to " + target + " port " + (int_to_str port) + " (tcp) failed" + (char_from_code 10))
+      format_nc_probe _   _      _    False =  (1, "")
+
+fn :: finish_nc_listen (Int, Int) String  => (Int, String)
+      finish_nc_listen lres       payload =
+        | (fst lres) != 0 = (1, "nc: listen failed")
+        | otherwise       = (0, payload)
+
+fn :: finish_nc_zero (Int, Int) NcSpec => (Int, String)
+      finish_nc_zero cres       spec   =
+        | (fst cres) == 0 =
+          _ = posix close (snd cres)
+          format_nc_probe 0 (nc_host spec) (nc_port spec) (nc_verbose spec)
+        | otherwise = format_nc_probe 1 (nc_host spec) (nc_port spec) (nc_verbose spec)
+
+fn :: finish_nc_transfer (Bool, String) => (Int, String)
+      finish_nc_transfer t_res          =
+        | fst t_res = (0, snd t_res)
+        | otherwise = (1, "nc: " + (snd t_res) + (char_from_code 10))
+
+op :: execute nc NcSpec with String  => (Int, String)
+      execute nc spec   with payload =
+        | nc_unix spec                                         = execute_nc_unix spec (nc_unix_path spec) payload
+        | (nc_listen spec) and (not (is valid port (nc_port spec))) = (1, "nc: invalid port")
+        | nc_listen spec                                       = finish_nc_listen (sys tcp listen (nc_host spec) (nc_port spec) 4) payload
+        | (nc_zero spec) and (not (is valid port (nc_port spec)))   = (1, "nc: invalid port")
+        | nc_zero spec                                         = finish_nc_zero (sys tcp connect (nc_host spec) (nc_port spec) (nc_timeout_ms spec)) spec
+        | otherwise                                            = finish_nc_transfer (nc loopback transfer payload to (nc_host spec) port (nc_port spec))
+
+fn :: finish_nc_unix_conn (Int, Int) String  => (Int, String)
+      finish_nc_unix_conn cres       payload =
+        | (fst cres) == 0 =
+          _ = posix close (snd cres)
+          (0, payload)
+        | otherwise = (1, "nc: unix connect failed")
+
+fn :: execute_nc_unix NcSpec String String  => (Int, String)
+      execute_nc_unix spec   upath  payload =
+        | not (is safe unix path upath) = (1, "nc: invalid unix socket path")
+        | nc_listen spec                = finish_nc_listen (sys unix listen upath 4) payload
+        | otherwise                     = finish_nc_unix_conn (sys unix connect upath (nc_timeout_ms spec)) payload

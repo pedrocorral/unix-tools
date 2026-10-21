@@ -2,8 +2,10 @@
 -- @tests TS-FS-001
 -- @tests TS-FS-002
 -- @tests TS-FS-003
+-- @tests TS-FS-004
 
 import test
+import posix
 import fs_lib
 
 fn :: test ls unit suite => ()
@@ -133,9 +135,52 @@ fn :: test fs e2e suite => ()
         _ = shell exec "rm -rf /tmp/ut_fs_tree /tmp/ut_mtree.spec /tmp/ut_mtree2.spec /tmp/ut_ls_def.out /tmp/ut_ls_cap_a.out /tmp/ut_ls_a.out /tmp/ut_ls_r.out /tmp/ut_ls_f.out /tmp/ut_ls_lh.out /tmp/ut_find1.out /tmp/ut_find_d1.out /tmp/ut_find_min2.out /tmp/ut_find_path.out /tmp/ut_find_emp.out /tmp/ut_mtree_v1.out /tmp/ut_mtree_v2.out /tmp/ut_mtree_u.out /tmp/ut_mtree_v3.out"
         ()
 
+fn :: test mktemp suite => ()
+      test mktemp suite =
+        _ = echo "=== 4. Testing BSD mktemp(1) Unit & E2E Cases (TS-FS-004) ==="
+        s_dry = parse mktemp args ["-u", "/tmp/ut_mktemp_dry.XXXXXX"]
+        r_dry = execute mktemp s_dry
+        _ = assert true (fst r_dry) "AC2: mktemp -u succeeds without creating file"
+        _ = assert true (str starts with (snd r_dry) "/tmp/ut_mktemp_dry.") "AC2: mktemp -u preserves template prefix"
+        _ = assert false (lstat exists (file lstat (snd r_dry))) "AC2: mktemp -u does not create path on disk"
+        s_file = parse mktemp args ["/tmp/ut_mktemp_file.XXXXXX"]
+        r_file = execute mktemp s_file
+        _ = assert true (fst r_file) "AC1: mktemp creates unique regular file"
+        _ = assert true (lstat exists (file lstat (snd r_file))) "AC1: created file exists on disk"
+        r_file2 = execute mktemp s_file
+        _ = assert true (fst r_file2) "AC1: second mktemp call with identical template succeeds"
+        _ = assert false (check str eq (snd r_file) (snd r_file2)) "AC1: consecutive mktemp calls generate distinct collision-free paths"
+        _ = sys unlink (snd r_file)
+        _ = sys unlink (snd r_file2)
+        s_dir = parse mktemp args ["-d", "/tmp/ut_mktemp_dir.XXXXXX"]
+        r_dir = execute mktemp s_dir
+        _ = assert true (fst r_dir) "AC2: mktemp -d creates unique directory"
+        _ = assert str eq (lstat kind (file lstat (snd r_dir))) "dir" "AC2: created path is a directory"
+        s_sub = parse mktemp args ["-p", snd r_dir, "-t", "subitem"]
+        r_sub = execute mktemp s_sub
+        _ = assert true (fst r_sub) "AC1/AC2: mktemp -p <dir> -t <prefix> creates file inside custom directory"
+        _ = assert true (str starts with (snd r_sub) ((snd r_dir) + "/subitem.")) "AC1/AC2: mktemp -p -t honors both directory prefix and template prefix"
+        _ = sys unlink (snd r_sub)
+        _ = sys rmdir (snd r_dir)
+        s_no_x = parse mktemp args ["-u", "/tmp/ut_mktemp_static"]
+        r_no_x = execute mktemp s_no_x
+        _ = assert false (check str eq (snd r_no_x) "/tmp/ut_mktemp_static") "AC1: template without trailing X still appends random suffix"
+        s_quiet_fail = parse mktemp args ["-q", "/nonexistent_ut_dir_999/bad.XXXXXX"]
+        r_quiet_fail = execute mktemp s_quiet_fail
+        _ = assert false (fst r_quiet_fail) "AC2: mktemp fails when parent directory does not exist"
+        _ = assert str eq (snd r_quiet_fail) "" "AC2: mktemp -q suppresses error message on failure"
+        rc_bin = shell exec "./target/mktemp -u /tmp/ut_mktemp_bin.XXXXXX > /tmp/ut_mktemp_bin.out"
+        _ = assert int equals rc_bin 0 "E2E binary: target/mktemp -u exits 0"
+        _ = assert true (str starts with (read file "/tmp/ut_mktemp_bin.out") "/tmp/ut_mktemp_bin.") "E2E binary: target/mktemp outputs generated path"
+        _ = sys unlink "/tmp/ut_mktemp_bin.out"
+        rc_comp = shell exec "D=$(./target/mktemp -d /tmp/ut_comp.XXXXXX) && printf 'payload\n' > \"$D/f.txt\" && ./target/mtree -c -p \"$D\" > \"$D.spec\" && ./target/mtree -f \"$D.spec\" -p \"$D\" && rm -rf \"$D\" \"$D.spec\""
+        _ = assert int equals rc_comp 0 "E2E composition: target/mktemp -d + target/mtree -c/-f roundtrip verification"
+        ()
+
 fn :: main => ()
       main =
         _ = test ls unit suite
         _ = test find unit suite
         _ = test fs e2e suite
-        echo "All 50 Tier 2 BSD Filesystem (ls, find, mtree) unit & E2E assertions passed!"
+        _ = test mktemp suite
+        echo "All 68 Tier 2 BSD Filesystem (ls, find, mtree, mktemp) unit & E2E assertions passed!"

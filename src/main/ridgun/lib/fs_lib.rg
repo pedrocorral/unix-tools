@@ -1,7 +1,10 @@
--- fs_lib.rg — Pure Ridgun BSD Filesystem Library (ls, find, mtree)
+-- fs_lib.rg — Pure Ridgun BSD Filesystem Library (ls, find, mtree, mktemp)
 -- @implements FR-FS-001
 -- @implements FR-FS-002
 -- @implements FR-FS-003
+-- @implements FR-FS-004
+
+import posix
 
 -- ============================================================================
 -- Algebraic Data Types (ADTs)
@@ -22,6 +25,8 @@ type FindSpec = f_paths: [String], f_expr: FindExpr, f_max_depth: Int, f_min_dep
 type MtreeEntry = me_rel: String, me_type: String, me_mode: Int, me_size: Int, me_sha256: String, me_link: String
 
 type MtreeSpec = m_create: Bool, m_spec_file: String, m_path: String, m_update: Bool, m_keywords: [String]
+
+type MktempSpec = mkt_dir: Bool, mkt_unsafe: Bool, mkt_quiet: Bool, mkt_tmpdir: String, mkt_prefix: String, mkt_template: String
 
 -- ============================================================================
 -- Foundational String & List Helpers
@@ -1220,3 +1225,115 @@ op :: verify mtree [MtreeEntry] against String    update Bool => [String]
         live_rels = collect_live_rels root_path "." []
         extra_diffs = find_extra_entries live_rels spec_entries []
         spec_diffs :: extra_diffs
+
+-- ============================================================================
+-- 4. BSD mktemp(1) Implementation (FR-FS-004)
+-- ============================================================================
+
+fn :: default_mktemp_spec => MktempSpec
+      default_mktemp_spec =  MktempSpec False False False "/tmp" "" ""
+
+fn :: parse_mktemp_loop [String]        MktempSpec => MktempSpec
+      parse_mktemp_loop []              spec       =  spec
+      parse_mktemp_loop ("-d":rest)     spec       =  parse_mktemp_loop rest (spec with mkt_dir: True)
+      parse_mktemp_loop ("-u":rest)     spec       =  parse_mktemp_loop rest (spec with mkt_unsafe: True)
+      parse_mktemp_loop ("-q":rest)     spec       =  parse_mktemp_loop rest (spec with mkt_quiet: True)
+      parse_mktemp_loop ("-p":dir:rest) spec       =  parse_mktemp_loop rest (spec with mkt_tmpdir: dir)
+      parse_mktemp_loop ("-t":pfx:rest) spec       =  parse_mktemp_loop rest (spec with mkt_prefix: pfx)
+      parse_mktemp_loop (arg:rest)      spec       =  parse_mktemp_loop rest (spec with mkt_template: arg)
+
+op :: parse mktemp args [String] => MktempSpec
+      parse mktemp args args     =  parse_mktemp_loop args default_mktemp_spec
+
+fn :: mktemp_alnum_table => String
+      mktemp_alnum_table =  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+fn :: mktemp_char_from_byte Int => String
+      mktemp_char_from_byte b   =
+        idx = ((b + 256) % 62)
+        str_slice mktemp_alnum_table idx (idx + 1)
+
+fn :: count_trailing_x String Int => Int
+      count_trailing_x tmpl   pos =
+        | pos <= 0 = 0
+        | (str_char_at tmpl (pos - 1)) == 88 = 1 + (count_trailing_x tmpl (pos - 1))
+        | otherwise = 0
+
+fn :: build_random_suffix [Int]    Int Int  => String
+      build_random_suffix _        0   _    =  ""
+      build_random_suffix []       rem seed =
+        ch = mktemp_char_from_byte ((seed * 31) + rem)
+        ch + (build_random_suffix [] (rem - 1) ((seed * 17) + 7))
+      build_random_suffix (b:rest) rem seed =
+        ch = mktemp_char_from_byte (b + seed)
+        ch + (build_random_suffix rest (rem - 1) (seed + 13))
+
+fn :: resolve_mktemp_template MktempSpec => String
+      resolve_mktemp_template spec       =
+        | (str_len (mkt_template spec)) > 0 = mkt_template spec
+        | (str_len (mkt_prefix spec)) > 0   = (mkt_tmpdir spec) + (path separator (sys os)) + (mkt_prefix spec) + ".XXXXXXXX"
+        | otherwise                         = (mkt_tmpdir spec) + (path separator (sys os)) + "tmp.XXXXXXXXXX"
+
+fn :: expand_mktemp_with String Int  Int Int     => String
+      expand_mktemp_with tmpl   tlen nx  attempt =
+        | nx <= 0   = expand_mktemp_with (tmpl + ".XXXXXXXX") (tlen + 9) 8 attempt
+        | otherwise =
+          rng = snd (sys random bytes list nx)
+          suf = build_random_suffix rng nx ((sys getpid) + (attempt * 97))
+          (str_slice tmpl 0 (tlen - nx)) + suf
+
+op :: expand mktemp template MktempSpec => String
+expand mktemp template spec       =
+  tmpl = resolve_mktemp_template spec
+  tlen = str_len tmpl
+  expand_mktemp_with tmpl tlen (count_trailing_x tmpl tlen) 0
+
+fn :: expand_mktemp_attempt MktempSpec Int     => String
+      expand_mktemp_attempt spec       attempt =
+        tmpl = resolve_mktemp_template spec
+        tlen = str_len tmpl
+        expand_mktemp_with tmpl tlen (count_trailing_x tmpl tlen) attempt
+
+fn :: finish_mktemp_fd String Int => Bool
+      finish_mktemp_fd path   fd  =
+        | fd < 0    = False
+        | otherwise =
+          _ = posix close fd
+          _ = posix chmod path 384
+          True
+
+fn :: create_mktemp_file String => Bool
+      create_mktemp_file path   =
+        finish_mktemp_fd path (posix open path ((o wronly) + (o creat) + (o excl)) 384)
+
+fn :: create_mktemp_dir String => Bool
+      create_mktemp_dir path   =
+        | not (posix mkdir path) = False
+        | otherwise              = posix chmod path 448
+
+fn :: dispatch_mktemp_cand MktempSpec String => (Bool, String)
+      dispatch_mktemp_cand spec       cand   =
+        | mkt_unsafe spec = (not (lstat exists (file_lstat cand)), cand)
+        | mkt_dir spec    = (create_mktemp_dir cand, cand)
+        | otherwise       = (create_mktemp_file cand, cand)
+
+fn :: format_mktemp_result MktempSpec (Bool, String) => (Bool, String)
+      format_mktemp_result spec       (True, cand)   =  (True, cand)
+      format_mktemp_result spec       (False, cand)  =
+        | mkt_quiet spec = (False, "")
+        | otherwise      = (False, "mktemp: cannot create temp file " + cand)
+
+fn :: execute_mktemp_loop MktempSpec Int     => (Bool, String)
+      execute_mktemp_loop spec       attempt =
+        | attempt >= 16 = format_mktemp_result spec (False, expand_mktemp_attempt spec attempt)
+        | otherwise     =
+          res = dispatch_mktemp_cand spec (expand_mktemp_attempt spec attempt)
+          check_mktemp_attempt spec attempt res
+
+fn :: check_mktemp_attempt MktempSpec Int     (Bool, String) => (Bool, String)
+      check_mktemp_attempt _          _       (True, cand)   =  (True, cand)
+      check_mktemp_attempt spec       attempt (False, _)     =  execute_mktemp_loop spec (attempt + 1)
+
+op :: execute mktemp MktempSpec => (Bool, String)
+      execute mktemp spec       =
+        execute_mktemp_loop spec 0

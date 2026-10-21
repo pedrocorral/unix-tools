@@ -89,8 +89,10 @@ fn :: test mdrr e2e suite => ()
         _ = shell exec "./target/mdrr -p -a -s Benchmarks /tmp/ut_mdrr_sample.md > /tmp/ut_mdrr_sec.out"
         sec_out = read file "/tmp/ut_mdrr_sec.out"
         _ = assert true (str contains ci sec_out "| Check  | 0.45s |") "AC2/AC3 E2E binary: target/mdrr -s Benchmarks renders aligned table"
-        _ = assert true (not (str contains ci sec_out "Fast compilation")) "AC3 E2E binary: target/mdrr -s Benchmarks excludes Features section"
-        _ = shell exec "rm -f /tmp/ut_mdrr_sample.md /tmp/ut_mdrr_ansi.out /tmp/ut_mdrr_toc.out /tmp/ut_mdrr_sec.out"
+        _ = assert false (str contains ci sec_out "Fast compilation") "AC3 E2E binary: target/mdrr -s Benchmarks excludes Features section"
+        _ = shell exec "cat /tmp/ut_mdrr_sample.md | ./target/mdrr -p -a -t > /tmp/ut_mdrr_stdin.out"
+        _ = assert str eq (read file "/tmp/ut_mdrr_stdin.out") ("* Solstice Docs" + nl + "  * Features" + nl + "  * Benchmarks" + nl) "E2E pipeline: cat | target/mdrr -p -a -t reads fd 0 via posix read"
+        _ = shell exec "rm -f /tmp/ut_mdrr_sample.md /tmp/ut_mdrr_ansi.out /tmp/ut_mdrr_toc.out /tmp/ut_mdrr_sec.out /tmp/ut_mdrr_stdin.out"
         ()
 
 fn :: main => ()
@@ -100,4 +102,4 @@ fn :: main => ()
         _ = test tables and code suite
         _ = test toc and section suite
         _ = test mdrr e2e suite
-        echo "All 30 mdrr(1) Terminal Markdown Reader unit & E2E assertions passed!"
+        echo "All 31 mdrr(1) Terminal Markdown Reader unit & E2E assertions passed!"

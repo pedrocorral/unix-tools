@@ -11,3 +11,4 @@ Tasks completed this month, newest last.
 | `TASK-0006-adopt-ridgun-natural-language-spaces-and-expand-type.md` | Adopt Ridgun natural-language spaces, shared ADT constructors, and `expand type` across `unix-tools` | `FR-FILTER-001`..`FR-SEC-001` |
 | `TASK-0007-adopt-ridgun-v0-9-5-pal-and-ridgun-libs-posix-rgli.md` | Adopt Ridgun v0.9.5 PAL and `ridgun-libs` (`posix.rglib`, `io.rglib`) across `unix-tools` | `ADR-0001`, `FR-FILTER-001`..`FR-SEC-001` |
 | `TASK-0008-replace-dev-stdin-text-reads-with-posix-read-0-des.md` | Replace `/dev/stdin` text reads with `posix read 0` descriptor I/O | `ADR-0001`, `FR-FILTER-001`..`FR-PROC-002` |
+| `TASK-0009-implement-bsd-mktemp-timeout-nc-and-sha256-utiliti.md` | Implement BSD `mktemp`, `timeout`, `nc`, and `sha256` utilities using `ridgun-libs` | `FR-FS-004`, `FR-PROC-003`, `FR-SEC-002` |
