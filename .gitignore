@@ -1,0 +1,7 @@
+# Build artifacts
+/target/
+
+# AIX: generated per machine by `aix install` (kit copy, agent links, rendered files)
+.aix/
+.agents/skills/
+.opencode/skills/
