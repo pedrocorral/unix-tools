@@ -2,6 +2,8 @@
 -- @implements FR-PROC-001
 -- @implements FR-PROC-002
 
+import io
+
 -- ============================================================================
 -- Algebraic Data Types (ADTs)
 -- ============================================================================
@@ -925,9 +927,11 @@ fn :: eval_sh_pipe ShNode ShNode ShEnv => ShEnv
 
 fn :: run_external_capture String  ShEnv => ShEnv
       run_external_capture cmd_str env   =
-        rc = shell_exec ("(" + cmd_str + ") > /tmp/.ut_sh_cap.out")
-        captured = read_file "/tmp/.ut_sh_cap.out"
-        _ = shell_exec "rm -f /tmp/.ut_sh_cap.out"
+        pid = sys getpid
+        cap_file = "/tmp/.ut_sh_cap_{pid}.out"
+        rc = shell_exec ("(" + cmd_str + ") > " + cap_file)
+        captured = read_file cap_file
+        _ = sys unlink cap_file
         env with env_status: rc, env_out: (env_out env) + captured, env_exited: False
 
 fn :: apply_out_redirs String [Redir]      ShEnv => String
@@ -938,8 +942,7 @@ fn :: apply_out_redirs String [Redir]      ShEnv => String
         apply_out_redirs "" rest env
       apply_out_redirs text   ((RedirAppend f):rest) env =
         target = expand_sh_word f env
-        prev = read_file target
-        _ = write_file target (prev + text)
+        _ = append file target text
         apply_out_redirs "" rest env
       apply_out_redirs text   (other:rest) env   =  apply_out_redirs text rest env
 
@@ -1045,9 +1048,9 @@ fn :: eval_test_expr [String]        => Bool
       eval_test_expr (op_s:arg:[])   =
         | op_s == "-z" = (str_len arg) == 0
         | op_s == "-n" = (str_len arg) > 0
-        | op_s == "-e" = (file_mtime_or_neg arg) >= 0
-        | op_s == "-f" = check_lstat_kind (file_lstat arg) "file"
-        | op_s == "-d" = check_lstat_kind (file_lstat arg) "dir"
+        | op_s == "-e" = file exists arg
+        | op_s == "-f" = is file arg
+        | op_s == "-d" = is dir arg
         | otherwise = False
       eval_test_expr (a:op_s:b:rest) =
         | (op_s == "=") or (op_s == "==") = a == b
@@ -1059,10 +1062,6 @@ fn :: eval_test_expr [String]        => Bool
         | op_s == "-gt" = (str_to_int a) > (str_to_int b)
         | op_s == "-ge" = (str_to_int a) >= (str_to_int b)
         | otherwise = False
-
-fn :: check_lstat_kind (Bool, String, Int, Int, Int, String, String, Int, String) String => Bool
-      check_lstat_kind (False, k, m, nl, sz, ow, gr, mt, lt) exp_k = False
-      check_lstat_kind (True, k, m, nl, sz, ow, gr, mt, lt) exp_k = k == exp_k
 
 op :: run shell script String with [String] => (String, Int)
       run shell script src    with pos_args =

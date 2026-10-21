@@ -1,6 +1,7 @@
 -- apply/main.rg — BSD apply(1) command applicator in Pure Ridgun
 -- @implements FR-PROC-001
 
+import io
 import proc_lib
 
 fn :: drop prog [String]    => [String]

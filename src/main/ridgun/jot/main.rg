@@ -1,6 +1,7 @@
 -- jot/main.rg — BSD jot(1) sequential/repetitive data generator
 -- @implements FR-FILTER-001
 
+import posix
 import filter_lib
 
 fn :: drop prog [String]    => [String]
@@ -9,7 +10,9 @@ fn :: drop prog [String]    => [String]
 
 fn :: emit jot JotSpec String => ()
       emit jot spec    result =
-        | j_no_newline spec = write file "/dev/stdout" result
+        | j_no_newline spec =
+          _ = posix write 1 result
+          ()
         | otherwise         = echo result
 
 fn :: main => ()

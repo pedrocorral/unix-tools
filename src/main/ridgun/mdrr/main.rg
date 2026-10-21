@@ -1,6 +1,7 @@
 -- mdrr/main.rg — MD Ridgun Reader: Terminal Markdown Formatter & Reader in Pure Ridgun
 -- @implements FR-FILTER-003
 
+import posix
 import md_lib
 
 fn :: drop prog [String] => [String]
@@ -24,7 +25,9 @@ fn :: emit stdout String => ()
       emit stdout ""     =  ()
       emit stdout text   =
         | (str char at text ((str len text) - 1)) == 10 = echo (str slice text 0 ((str len text) - 1))
-        | otherwise                                     = write file "/dev/stdout" text
+        | otherwise                                     =
+          _ = posix write 1 text
+          ()
 
 fn :: main => ()
       main =

@@ -2,6 +2,7 @@
 -- @tests TS-SEC-002
 
 import test
+import posix
 import sec_lib
 
 fn :: unwrap rules DoasParseResult  => [DoasRule]

@@ -14,6 +14,7 @@ automated_in: [src/test/ridgun/test_proc.rg]
 ## Steps / inputs
 1. Execute `sh -c 'X=hello; echo "$X world"'` and parameter expansions (`${VAR}`, `${VAR:-default}`, `$?`, `$#`, `$1`).
 2. Execute conditional lists (`&&`, `||`, `;`), pipelines (`|`), redirections (`>`, `>>`, `<`, `2>&1`), `if/elif/else/fi`, `for/in/do/done`, `while/do/done`, and built-ins (`cd`, `pwd`, `export`, `unset`, `test`/`[`, `true`, `false`, `exit`, `.`).
+3. Verify Ridgun v0.9.5 PAL & `posix`/`io` library integration (`null device`, `path separator`, `process exists`, `io read with timeout`, `append file`, `is file`, `sys unlink`).
 
 ## Expected results (map to acceptance criteria)
 - AC1 → `sh -c 'X=hello; echo "$X world"'` prints `hello world` and exits with `0`.

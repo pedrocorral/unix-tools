@@ -1,6 +1,7 @@
 -- vis/main.rg — BSD vis(1) visual character encoder
 -- @implements FR-FILTER-002
 
+import posix
 import filter_lib
 
 fn :: drop prog [String]    => [String]
@@ -18,4 +19,5 @@ fn :: main => ()
         spec = parse vis args args
         raw = read vis files (v_files spec)
         result = vis encode bytes raw with spec
-        write file "/dev/stdout" result
+        _ = posix write 1 result
+        ()

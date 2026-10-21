@@ -1,6 +1,7 @@
 -- make/main.rg — BSD make(1) DAG dependency build tool in Pure Ridgun
 -- @implements FR-PROC-001
 
+import io
 import proc_lib
 
 fn :: drop prog [String]    => [String]

@@ -3,6 +3,7 @@
 -- @tests TS-PROC-002
 
 import test
+import io
 import proc_lib
 
 fn :: test apply suite => ()
@@ -102,10 +103,26 @@ fn :: test proc e2e suite => ()
         _ = shell exec "rm -f /tmp/ut_apply.out /tmp/ut_apply_live.txt /tmp/ut_Makefile /tmp/ut_mk_built.txt /tmp/ut_make.out /tmp/ut_MakeCycle /tmp/ut_mk_cyc.out /tmp/ut_sh1.out /tmp/ut_sh_pipe.out /tmp/ut_sh_red.txt /tmp/ut_script.sh /tmp/ut_sh_script.out /tmp/ut_sh_script_def.out"
         ()
 
+fn :: test pal io suite => ()
+      test pal io suite =
+        _ = echo "=== 5. Testing Ridgun v0.9.5 PAL & posix/io Library Integration (TS-PROC-002) ==="
+        _ = assert equals (null device) "/dev/null" "PAL posix: null device on Linux is /dev/null"
+        _ = assert equals (path separator (sys os)) "/" "PAL posix: path separator on Linux is /"
+        _ = assert true (process exists (sys getpid)) "PAL posix: process exists for current PID"
+        _ = write file "/tmp/ut_pal_io.txt" "hello_pal"
+        res_io = io read with timeout "/tmp/ut_pal_io.txt" 500
+        _ = assert equals (format io result res_io) "ok:str:hello_pal" "PAL io: io read with timeout reads file within deadline"
+        _ = append file "/tmp/ut_pal_io.txt" "_appended"
+        _ = assert equals (read file "/tmp/ut_pal_io.txt") "hello_pal_appended" "PAL io: append file appends content cleanly"
+        _ = assert true (is file "/tmp/ut_pal_io.txt") "PAL io: is file predicate"
+        _ = sys unlink "/tmp/ut_pal_io.txt"
+        assert true (not (file exists "/tmp/ut_pal_io.txt")) "PAL posix/io: sys unlink removes file"
+
 fn :: main => ()
       main =
         _ = test apply suite
         _ = test make suite
         _ = test sh suite
         _ = test proc e2e suite
-        echo "All 34 Tier 3 BSD Process & Build (apply, make, sh) unit & E2E assertions passed!"
+        _ = test pal io suite
+        echo "All 41 Tier 3 BSD Process, Build & PAL I/O (apply, make, sh, posix, io) unit & E2E assertions passed!"

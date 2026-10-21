@@ -1,6 +1,8 @@
 -- sec_lib.rg — Pure Ridgun OpenBSD doas(1) & doas.conf(5) Security Policy Engine
 -- @implements FR-SEC-001
 
+import posix
+
 -- ============================================================================
 -- Algebraic Data Types (ADTs)
 -- ============================================================================
@@ -320,7 +322,7 @@ fn :: authenticate doas DoasRule DoasSpec String      => Bool
 
 fn :: run after auth Bool DoasRule DoasSpec String => Int
       run after auth False _ _ _ =
-        _ = write file "/dev/stderr" ("doas: Authentication required" + (char from code 10))
+        _ = posix write 2 ("doas: Authentication required" + (char from code 10))
         1
       run after auth True rule spec caller_user =
         ug = sys lookup uid gid (d_target_user spec)

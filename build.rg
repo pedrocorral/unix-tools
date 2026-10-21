@@ -18,3 +18,9 @@ fn :: test dir => String
 
 fn :: target dir => String
       target dir =  "target"
+
+fn :: dependencies => [String]
+      dependencies =  ["/home/boogie/ridgun-libs/src/main/ridgun/lib/posix.rg", "/home/boogie/ridgun-libs/src/main/ridgun/lib/io.rg"]
+
+fn :: task sync libs => String
+      task sync libs =  "mkdir -p .stable/deps target && ridgunc build --lib /home/boogie/ridgun-libs/src/main/ridgun/lib/posix.rg -o .stable/deps/posix.rglib && cp -f .stable/deps/posix.rglib target/posix.rglib && ridgunc build --lib /home/boogie/ridgun-libs/src/main/ridgun/lib/io.rg -o .stable/deps/io.rglib && cp -f .stable/deps/io.rglib target/io.rglib"

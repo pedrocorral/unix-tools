@@ -1,5 +1,6 @@
 # Build artifacts
 /target/
+/.stable/
 
 # AIX: generated per machine by `aix install` (kit copy, agent links, rendered files)
 .aix/

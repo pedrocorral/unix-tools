@@ -19,7 +19,7 @@ Many BSD base-system utilities (`jot`, `rs`, `lam`, `vis`/`unvis`, `mtree`, `app
 
 ## Decision
 We choose **Option 1: 100% Pure Ridgun (`.rg`)** with zero host-language shortcuts:
-- **Language & Compiler**: Ridgun (`v0.9.3+`), using the toolchain from `/home/boogie/ridgun/target/ridgunc` and `/home/boogie/ridgun/target/stable`.
+- **Language & Compiler**: Ridgun (`v0.9.5+`), using the toolchain (`ridgunc` and `stable`) and consuming the system PAL library bundles (`posix.rglib`, `io.rglib`) from `/home/boogie/ridgun-libs` via `.stable/deps/`.
 - **Idiomatic Style**:
   - Use **natural-language mixfix operators (`op :: ...`)** for domain logic, CLI flag predicates, rule evaluation, and data transformations.
   - Use **algebraic data types (`type ...`)** and exhaustive pattern matching with guards (`| cond = expr`) for ASTs, options, filesystem nodes, and rules.

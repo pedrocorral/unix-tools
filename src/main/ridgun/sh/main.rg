@@ -1,6 +1,7 @@
 -- sh/main.rg — BSD sh(1) Almquist-style command interpreter in Pure Ridgun
 -- @implements FR-PROC-002
 
+import io
 import proc_lib
 
 fn :: drop prog [String]    => [String]
@@ -17,7 +18,9 @@ fn :: emit stdout String => ()
       emit stdout ""     =  ()
       emit stdout text   =
         | (str char at text ((str len text) - 1)) == 10 = echo (str slice text 0 ((str len text) - 1))
-        | otherwise                                     = write file "/dev/stdout" text
+        | otherwise                                     =
+          _ = posix write 1 text
+          ()
 
 fn :: finish sh (String, Int)  => ()
       finish sh (text, status) =

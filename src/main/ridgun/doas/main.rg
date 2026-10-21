@@ -1,6 +1,7 @@
 -- doas/main.rg — OpenBSD doas(1) dedicated privilege escalation & config auditor in Pure Ridgun
 -- @implements FR-SEC-001
 
+import posix
 import sec_lib
 
 fn :: drop prog [String]    => [String]
@@ -57,7 +58,7 @@ fn :: run live doas [DoasRule] DoasSpec => ()
 
 fn :: dispatch live decision DoasDecision DoasSpec String => ()
       dispatch live decision DecDeny spec caller =
-        _ = write file "/dev/stderr" ("doas: Operation not permitted" + (char from code 10))
+        _ = posix write 2 ("doas: Operation not permitted" + (char from code 10))
         sys exit 1
       dispatch live decision (DecPermit nopass rule) spec caller =
         rc = execute privileged rule spec caller
