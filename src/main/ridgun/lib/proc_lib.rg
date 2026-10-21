@@ -16,7 +16,9 @@ type MakeSpec = mk_file: String, mk_dry_run: Bool, mk_always: Bool, mk_jobs: Int
 
 type Redir = RedirIn String | RedirOut String | RedirAppend String | RedirErrToOut
 
-type ShNode = ShSimple [String] [Redir] | ShPipe ShNode ShNode | ShAnd ShNode ShNode | ShOr ShNode ShNode | ShSeq ShNode ShNode | ShSubshell ShNode | ShIf ShNode ShNode ShNode | ShWhile ShNode ShNode | ShFor String [String] ShNode | ShAssign String String
+type ShNode = ShSimple [String] [Redir] | ShPipe ShNode ShNode | ShAnd ShNode ShNode | ShOr ShNode ShNode | ShSeq ShNode ShNode
+
+expand type ShNode = ShSubshell ShNode | ShIf ShNode ShNode ShNode | ShWhile ShNode ShNode | ShFor String [String] ShNode | ShAssign String String
 
 type ShEnv = env_vars: [MakeVar], env_pos: [String], env_status: Int, env_out: String, env_exited: Bool
 
@@ -26,75 +28,75 @@ type ShEnv = env_vars: [MakeVar], env_pos: [String], env_status: Int, env_out: S
 
 op :: split lines String => [String]
       split lines s      =
-        | (str_len s) == 0 = []
-        | otherwise = split_lines_loop s 0 (str_len s) "" []
+        | (str len s) == 0 = []
+        | otherwise        = scan lines loop s 0 (str len s) "" []
 
-fn :: split_lines_loop String Int Int String [String] => [String]
-      split_lines_loop s idx len cur acc =
-        | idx >= len = finalize_lines cur acc
-        | (str_char_at s idx) == 10 = split_lines_loop s (idx + 1) len "" (acc :: [strip_cr cur])
-        | otherwise = split_lines_loop s (idx + 1) len (cur + (str_slice s idx (idx + 1))) acc
+fn :: scan lines loop String Int Int String [String] => [String]
+      scan lines loop s idx len cur acc =
+        | idx >= len                = finalize lines cur acc
+        | (str char at s idx) == 10 = scan lines loop s (idx + 1) len "" (acc :: [strip cr cur])
+        | otherwise                 = scan lines loop s (idx + 1) len (cur + (str slice s idx (idx + 1))) acc
 
-fn :: strip_cr String => String
-      strip_cr s      =
-        | (str_len s) == 0 = s
-        | (str_char_at s ((str_len s) - 1)) == 13 = str_slice s 0 ((str_len s) - 1)
-        | otherwise = s
+fn :: strip cr String => String
+      strip cr s      =
+        | (str len s) == 0                        = s
+        | (str char at s ((str len s) - 1)) == 13 = str slice s 0 ((str len s) - 1)
+        | otherwise                               = s
 
-fn :: finalize_lines String [String] => [String]
-      finalize_lines cur    acc      =
-        | (str_len cur) == 0 = acc
-        | otherwise = acc :: [strip_cr cur]
+fn :: finalize lines String [String] => [String]
+      finalize lines cur    acc      =
+        | (str len cur) == 0 = acc
+        | otherwise          = acc :: [strip cr cur]
 
 op :: split whitespace String => [String]
-      split whitespace s      =  split_ws_loop s 0 (str_len s) "" []
+      split whitespace s      =  split ws loop s 0 (str len s) "" []
 
-fn :: is_ws Int => Bool
-      is_ws c   =  (c == 32) or (c == 9) or (c == 10) or (c == 13)
+fn :: is ws Int => Bool
+      is ws c   =  (c == 32) or (c == 9) or (c == 10) or (c == 13)
 
-fn :: split_ws_loop String Int Int String [String] => [String]
-      split_ws_loop s idx len cur acc =
-        | idx >= len = push_nonempty cur acc
-        | is_ws (str_char_at s idx) = split_ws_loop s (idx + 1) len "" (push_nonempty cur acc)
-        | otherwise = split_ws_loop s (idx + 1) len (cur + (str_slice s idx (idx + 1))) acc
+fn :: split ws loop String Int Int String [String] => [String]
+      split ws loop s idx len cur acc =
+        | idx >= len                = push nonempty cur acc
+        | is ws (str char at s idx) = split ws loop s (idx + 1) len "" (push nonempty cur acc)
+        | otherwise                 = split ws loop s (idx + 1) len (cur + (str slice s idx (idx + 1))) acc
 
-fn :: push_nonempty String [String] => [String]
-      push_nonempty cur    acc      =
-        | (str_len cur) == 0 = acc
-        | otherwise = acc :: [cur]
+fn :: push nonempty String [String] => [String]
+      push nonempty cur    acc      =
+        | (str len cur) == 0 = acc
+        | otherwise          = acc :: [cur]
 
-fn :: trim_ws String => String
-      trim_ws s      =
-        left = trim_left_idx s 0 (str_len s)
-        right = trim_right_idx s left (str_len s)
-        str_slice s left right
+fn :: trim ws String => String
+      trim ws s      =
+        left = trim left idx s 0 (str len s)
+        right = trim right idx s left (str len s)
+        str slice s left right
 
-fn :: trim_left_idx String Int Int => Int
-      trim_left_idx s      idx len =
-        | idx >= len = len
-        | is_ws (str_char_at s idx) = trim_left_idx s (idx + 1) len
-        | otherwise = idx
+fn :: trim left idx String Int Int => Int
+      trim left idx s idx len =
+        | idx >= len                = len
+        | is ws (str char at s idx) = trim left idx s (idx + 1) len
+        | otherwise                 = idx
 
-fn :: trim_right_idx String Int  Int   => Int
-      trim_right_idx s      left right =
-        | right <= left = left
-        | is_ws (str_char_at s (right - 1)) = trim_right_idx s left (right - 1)
-        | otherwise = right
+fn :: trim right idx String Int Int => Int
+      trim right idx s left right =
+        | right <= left                     = left
+        | is ws (str char at s (right - 1)) = trim right idx s left (right - 1)
+        | otherwise                         = right
 
-fn :: join_with [String] String => String
-      join_with []       sep    =  ""
-      join_with (x:[])   sep    =  x
-      join_with (x:xs)   sep    =  x + sep + (join_with xs sep)
+fn :: join with [String] String => String
+      join with []       sep    =  ""
+      join with (x:[])   sep    =  x
+      join with (x:xs)   sep    =  x + sep + (join with xs sep)
 
-fn :: str_list_nth [String] Int => String
-      str_list_nth []       n   =  ""
-      str_list_nth (x:xs)   n   =
-        | n <= 0 = x
-        | otherwise = str_list_nth xs (n - 1)
+fn :: str list nth [String] Int => String
+      str list nth []       n   =  ""
+      str list nth (x:xs)   n   =
+        | n <= 0    = x
+        | otherwise = str list nth xs (n - 1)
 
-fn :: list_len [A]    => Int
-      list_len []     =  0
-      list_len (_:xs) =  1 + (list_len xs)
+fn :: list len [A]    => Int
+      list len []     =  0
+      list len (_:xs) =  1 + (list len xs)
 
 fn :: fst (A, B) => A
       fst (a, _) =  a
@@ -111,27 +113,27 @@ fn :: snd3 (A, B, C) => B
 fn :: trd3 (A, B, C) => C
       trd3 (_, _, c) =  c
 
-fn :: take_str_list [A]    Int [A] => [A]
-      take_str_list []     n   acc =  acc
-      take_str_list (x:xs) n   acc =
-        | n <= 0 = acc
-        | otherwise = take_str_list xs (n - 1) (acc :: [x])
+fn :: take str list [A] Int [A] => [A]
+      take str list [] n acc = acc
+      take str list (x:xs) n acc =
+        | n <= 0    = acc
+        | otherwise = take str list xs (n - 1) (acc :: [x])
 
-fn :: drop_str_list [A]    Int => [A]
-      drop_str_list []     n   =  []
-      drop_str_list (x:xs) n   =
-        | n <= 0 = [x] :: xs
-        | otherwise = drop_str_list xs (n - 1)
+fn :: drop str list [A]    Int => [A]
+      drop str list []     n   =  []
+      drop str list (x:xs) n   =
+        | n <= 0    = [x] :: xs
+        | otherwise = drop str list xs (n - 1)
 
-fn :: list_contains_str [String] String => Bool
-      list_contains_str []       target =  False
-      list_contains_str (x:xs)   target =
+fn :: list contains str [String] String => Bool
+      list contains str []       target =  False
+      list contains str (x:xs)   target =
         | x == target = True
-        | otherwise = list_contains_str xs target
+        | otherwise   = list contains str xs target
 
-fn :: max_int Int Int => Int
-      max_int a   b   =
-        | a >= b = a
+fn :: max int Int Int => Int
+      max int a   b   =
+        | a >= b    = a
         | otherwise = b
 
 fn :: is_digits_only String => Bool

@@ -3,18 +3,18 @@
 
 import fs_lib
 
-fn :: drop_prog [String]    => [String]
-      drop_prog []          =  []
-      drop_prog (prog:rest) =  rest
+fn :: drop prog [String]    => [String]
+      drop prog []          =  []
+      drop prog (prog:rest) =  rest
 
-fn :: emit_stdout String => ()
-      emit_stdout ""     =  ()
-      emit_stdout text   =
-        | (str_char_at text ((str_len text) - 1)) == 10 = echo (str_slice text 0 ((str_len text) - 1))
-        | otherwise                                     = write_file "/dev/stdout" text
+fn :: emit stdout String => ()
+      emit stdout ""     =  ()
+      emit stdout text   =
+        | (str char at text ((str len text) - 1)) == 10 = echo (str slice text 0 ((str len text) - 1))
+        | otherwise                                     = write file "/dev/stdout" text
 
 fn :: main => ()
       main =
-        args = drop_prog cli_args
+        args = drop prog (cli args)
         output = run find args
-        emit_stdout output
+        emit stdout output

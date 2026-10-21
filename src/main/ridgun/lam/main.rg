@@ -3,13 +3,13 @@
 
 import filter_lib
 
-fn :: drop_prog [String]    => [String]
-      drop_prog []          =  []
-      drop_prog (prog:rest) =  rest
+fn :: drop prog [String]    => [String]
+      drop prog []          =  []
+      drop prog (prog:rest) =  rest
 
 fn :: main => ()
       main =
-        args = drop_prog cli_args
+        args = drop prog (cli args)
         parsed = parse lam args args
         result = laminate columns (fst parsed) with (snd parsed)
         echo result

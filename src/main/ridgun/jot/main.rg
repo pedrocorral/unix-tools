@@ -3,18 +3,18 @@
 
 import filter_lib
 
-fn :: drop_prog [String]    => [String]
-      drop_prog []          =  []
-      drop_prog (prog:rest) =  rest
+fn :: drop prog [String]    => [String]
+      drop prog []          =  []
+      drop prog (prog:rest) =  rest
 
-fn :: emit_jot JotSpec String => ()
-      emit_jot spec    result =
-        | j_no_newline spec = write_file "/dev/stdout" result
+fn :: emit jot JotSpec String => ()
+      emit jot spec    result =
+        | j_no_newline spec = write file "/dev/stdout" result
         | otherwise         = echo result
 
 fn :: main => ()
       main =
-        args = drop_prog cli_args
+        args = drop prog (cli args)
         spec = parse jot args args
         result = evaluate jot spec
-        emit_jot spec result
+        emit jot spec result

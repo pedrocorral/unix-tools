@@ -3,18 +3,18 @@
 
 import filter_lib
 
-fn :: drop_prog [String]    => [String]
-      drop_prog []          =  []
-      drop_prog (prog:rest) =  rest
+fn :: drop prog [String]    => [String]
+      drop prog []          =  []
+      drop prog (prog:rest) =  rest
 
-fn :: read_unvis_files [String] => String
-      read_unvis_files []       =  read_file "/dev/stdin"
-      read_unvis_files (f:[])   =  read_file f
-      read_unvis_files (f:rest) =  (read_file f) + (read_unvis_files rest)
+fn :: read unvis files [String] => String
+      read unvis files []       =  read file "/dev/stdin"
+      read unvis files (f:[])   =  read file f
+      read unvis files (f:rest) =  (read file f) + (read unvis files rest)
 
 fn :: main => ()
       main =
-        args = drop_prog cli_args
-        raw = read_unvis_files args
+        args = drop prog (cli args)
+        raw = read unvis files args
         result = unvis decode bytes raw
-        write_bytes "/dev/stdout" result
+        write bytes "/dev/stdout" result

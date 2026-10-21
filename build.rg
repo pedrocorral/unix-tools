@@ -1,20 +1,20 @@
 -- build.rg — Project build definition for unix-tools
 -- @implements ADR-0001
 
-fn :: project_name => String
-project_name = "unix-tools"
+fn :: project name => String
+      project name =  "unix-tools"
 
-fn :: project_version => String
-project_version = "0.1.0"
+fn :: project version => String
+      project version =  "0.1.0"
 
-fn :: main_entry => String
-main_entry = "src/main/ridgun/jot/main.rg"
+fn :: main entry => String
+      main entry =  "src/main/ridgun/jot/main.rg"
 
-fn :: source_dir => String
-source_dir = "src/main/ridgun"
+fn :: source dir => String
+      source dir =  "src/main/ridgun"
 
-fn :: test_dir => String
-test_dir = "src/test/ridgun"
+fn :: test dir => String
+      test dir =  "src/test/ridgun"
 
-fn :: target_dir => String
-target_dir = "target"
+fn :: target dir => String
+      target dir =  "target"

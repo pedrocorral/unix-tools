@@ -3,41 +3,41 @@
 
 import fs_lib
 
-fn :: drop_prog [String]    => [String]
-      drop_prog []          =  []
-      drop_prog (prog:rest) =  rest
+fn :: drop prog [String]    => [String]
+      drop prog []          =  []
+      drop prog (prog:rest) =  rest
 
-fn :: resolve_spec_path String => String
-      resolve_spec_path ""     =  "/dev/stdin"
-      resolve_spec_path "-"    =  "/dev/stdin"
-      resolve_spec_path p      =  p
+fn :: resolve spec path String => String
+      resolve spec path ""     =  "/dev/stdin"
+      resolve spec path "-"    =  "/dev/stdin"
+      resolve spec path p      =  p
 
-fn :: emit_stdout String => ()
-      emit_stdout ""     =  ()
-      emit_stdout text   =
-        | (str_char_at text ((str_len text) - 1)) == 10 = echo (str_slice text 0 ((str_len text) - 1))
-        | otherwise                                     = write_file "/dev/stdout" text
+fn :: emit stdout String => ()
+      emit stdout ""     =  ()
+      emit stdout text   =
+        | (str char at text ((str len text) - 1)) == 10 = echo (str slice text 0 ((str len text) - 1))
+        | otherwise                                     = write file "/dev/stdout" text
 
-fn :: run_mtree_mode MtreeSpec => ()
-      run_mtree_mode spec      =
-        | m_create spec = emit_stdout (generate mtree spec for (m_path spec))
-        | otherwise     = run_mtree_verify spec
+fn :: run mtree mode MtreeSpec => ()
+      run mtree mode spec      =
+        | m_create spec = emit stdout (generate mtree spec for (m_path spec))
+        | otherwise     = run mtree verify spec
 
-fn :: run_mtree_verify MtreeSpec => ()
-      run_mtree_verify spec      =
-        raw_spec = read_file (resolve_spec_path (m_spec_file spec))
+fn :: run mtree verify MtreeSpec => ()
+      run mtree verify spec      =
+        raw_spec = read file (resolve spec path (m_spec_file spec))
         entries = parse mtree spec text raw_spec
         diffs = verify mtree entries against (m_path spec) update (m_update spec)
-        finish_mtree_verify diffs
+        finish mtree verify diffs
 
-fn :: finish_mtree_verify [String] => ()
-      finish_mtree_verify []       =  ()
-      finish_mtree_verify diffs    =
-        _ = echo (join_with diffs (char_from_code 10))
-        sys_exit 2
+fn :: finish mtree verify [String] => ()
+      finish mtree verify []       =  ()
+      finish mtree verify diffs    =
+        _ = echo (join with diffs (char from code 10))
+        sys exit 2
 
 fn :: main => ()
       main =
-        args = drop_prog cli_args
+        args = drop prog (cli args)
         spec = parse mtree args args
-        run_mtree_mode spec
+        run mtree mode spec

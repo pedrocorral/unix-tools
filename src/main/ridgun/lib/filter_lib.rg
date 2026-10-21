@@ -16,9 +16,9 @@ type VisSpec = v_octal: Bool, v_cstyle: Bool, v_tab: Bool, v_space: Bool, v_newl
 -- Generic List, Integer & String Helpers
 -- ============================================================================
 
-fn :: list_len [A]    => Int
-      list_len []     =  0
-      list_len (_:xs) =  1 + (list_len xs)
+fn :: list len [A]    => Int
+      list len []     =  0
+      list len (_:xs) =  1 + (list len xs)
 
 fn :: fst (A, B) => A
       fst (a, _) =  a
@@ -26,62 +26,62 @@ fn :: fst (A, B) => A
 fn :: snd (A, B) => B
       snd (_, b) =  b
 
-fn :: str_list_nth [String] Int => String
-      str_list_nth []       idx =  ""
-      str_list_nth (x:xs)   n   =
-        | n <= 0 = x
-        | otherwise = str_list_nth xs (n - 1)
+fn :: str list nth [String] Int => String
+      str list nth []       idx =  ""
+      str list nth (x:xs)   n   =
+        | n <= 0    = x
+        | otherwise = str list nth xs (n - 1)
 
-fn :: int_list_nth [Int]  Int => Int
-      int_list_nth []     idx =  0
-      int_list_nth (x:xs) n   =
-        | n <= 0 = x
-        | otherwise = int_list_nth xs (n - 1)
+fn :: int list nth [Int]  Int => Int
+      int list nth []     idx =  0
+      int list nth (x:xs) n   =
+        | n <= 0    = x
+        | otherwise = int list nth xs (n - 1)
 
-fn :: drop_str_list [A]    Int => [A]
-      drop_str_list []     n   =  []
-      drop_str_list (x:xs) n   =
-        | n <= 0 = [x] :: xs
-        | otherwise = drop_str_list xs (n - 1)
+fn :: drop str list [A]    Int => [A]
+      drop str list []     n   =  []
+      drop str list (x:xs) n   =
+        | n <= 0    = [x] :: xs
+        | otherwise = drop str list xs (n - 1)
 
-fn :: join_with [String] String => String
-      join_with []       sep    =  ""
-      join_with (x:[])   sep    =  x
-      join_with (x:xs)   sep    =  x + sep + (join_with xs sep)
+fn :: join with [String] String => String
+      join with []       sep    =  ""
+      join with (x:[])   sep    =  x
+      join with (x:xs)   sep    =  x + sep + (join with xs sep)
 
-fn :: repeat_str String Int => String
-      repeat_str s      n   =
-        | n <= 0 = ""
-        | otherwise = s + (repeat_str s (n - 1))
+fn :: repeat str String Int => String
+      repeat str s      n   =
+        | n <= 0    = ""
+        | otherwise = s + (repeat str s (n - 1))
 
-fn :: pad_right String Int   => String
-      pad_right s      width =
-        | (str_len s) >= width = s
-        | otherwise = s + (repeat_str " " (width - (str_len s)))
+fn :: pad right String Int   => String
+      pad right s      width =
+        | (str len s) >= width = s
+        | otherwise            = s + (repeat str " " (width - (str len s)))
 
-fn :: pad_left String Int   => String
-      pad_left s      width =
-        | (str_len s) >= width = s
-        | otherwise = (repeat_str " " (width - (str_len s))) + s
+fn :: pad left String Int   => String
+      pad left s      width =
+        | (str len s) >= width = s
+        | otherwise            = (repeat str " " (width - (str len s))) + s
 
-fn :: pad_left_char String Int   String => String
-      pad_left_char s      width ch     =
-        | (str_len s) >= width = s
-        | otherwise = (repeat_str ch (width - (str_len s))) + s
+fn :: pad left char String Int String => String
+      pad left char s width ch =
+        | (str len s) >= width = s
+        | otherwise            = (repeat str ch (width - (str len s))) + s
 
 fn :: pow10 Int => Int
       pow10 n   =
-        | n <= 0 = 1
+        | n <= 0    = 1
         | otherwise = 10 * (pow10 (n - 1))
 
-fn :: abs_int Int => Int
-      abs_int n   =
-        | n < 0 = 0 - n
+fn :: abs int Int => Int
+      abs int n   =
+        | n < 0     = 0 - n
         | otherwise = n
 
-fn :: max_int Int Int => Int
-      max_int a   b   =
-        | a >= b = a
+fn :: max int Int Int => Int
+      max int a   b   =
+        | a >= b    = a
         | otherwise = b
 
 fn :: is_digits_only String => Bool

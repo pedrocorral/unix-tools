@@ -3,24 +3,24 @@
 
 import proc_lib
 
-fn :: drop_prog [String]    => [String]
-      drop_prog []          =  []
-      drop_prog (prog:rest) =  rest
+fn :: drop prog [String]    => [String]
+      drop prog []          =  []
+      drop prog (prog:rest) =  rest
 
-fn :: emit_make_lines [String] => ()
-      emit_make_lines []       =  ()
-      emit_make_lines lines    =  echo (join_with lines (char_from_code 10))
+fn :: emit make lines [String] => ()
+      emit make lines []       =  ()
+      emit make lines lines    =  echo (join with lines (char from code 10))
 
-fn :: finish_make (Bool, [String]) => ()
-      finish_make (True, lines)    =  emit_make_lines lines
-      finish_make (False, lines)   =
-        _ = emit_make_lines lines
-        sys_exit 2
+fn :: finish make (Bool, [String]) => ()
+      finish make (True, lines)    =  emit make lines lines
+      finish make (False, lines)   =
+        _ = emit make lines lines
+        sys exit 2
 
 fn :: main => ()
       main =
-        args = drop_prog cli_args
+        args = drop prog (cli args)
         spec = parse make args args
-        raw_mk = read_file (mk_file spec)
+        raw_mk = read file (mk_file spec)
         res = evaluate make raw_mk with spec
-        finish_make res
+        finish make res

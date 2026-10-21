@@ -3,33 +3,33 @@
 
 import md_lib
 
-fn :: drop_prog [String] => [String]
-      drop_prog []       =  []
-      drop_prog (_:rest) =  rest
+fn :: drop prog [String] => [String]
+      drop prog []       =  []
+      drop prog (_:rest) =  rest
 
-fn :: read_md_inputs [String] [String] => String
-      read_md_inputs []       _        =  read_file "/dev/stdin"
-      read_md_inputs files    acc      =
-        loaded = load_each_md files acc
-        join_with loaded ((char_from_code 10) + (char_from_code 10))
+fn :: read md inputs [String] [String] => String
+      read md inputs []       _        =  read file "/dev/stdin"
+      read md inputs files    acc      =
+        loaded = load each md files acc
+        join with loaded ((char from code 10) + (char from code 10))
 
-fn :: load_each_md [String]    [String] => [String]
-      load_each_md []          acc      =  acc
-      load_each_md ("-":rest)  acc      =
-        load_each_md rest (acc :: [read_file "/dev/stdin"])
-      load_each_md (path:rest) acc      =
-        load_each_md rest (acc :: [read_file path])
+fn :: load each md [String]    [String] => [String]
+      load each md []          acc      =  acc
+      load each md ("-":rest)  acc      =
+        load each md rest (acc :: [read file "/dev/stdin"])
+      load each md (path:rest) acc      =
+        load each md rest (acc :: [read file path])
 
-fn :: emit_stdout String => ()
-      emit_stdout ""     =  ()
-      emit_stdout text   =
-        | (str_char_at text ((str_len text) - 1)) == 10 = echo (str_slice text 0 ((str_len text) - 1))
-        | otherwise                                     = write_file "/dev/stdout" text
+fn :: emit stdout String => ()
+      emit stdout ""     =  ()
+      emit stdout text   =
+        | (str char at text ((str len text) - 1)) == 10 = echo (str slice text 0 ((str len text) - 1))
+        | otherwise                                     = write file "/dev/stdout" text
 
 fn :: main => ()
       main =
-        args = drop_prog cli_args
+        args = drop prog (cli args)
         spec = parse mdrr args args
-        raw = read_md_inputs (md_files spec) []
+        raw = read md inputs (md_files spec) []
         rendered = render markdown raw with spec
-        emit_stdout rendered
+        emit stdout rendered

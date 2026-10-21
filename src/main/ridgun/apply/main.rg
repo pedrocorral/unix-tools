@@ -3,26 +3,26 @@
 
 import proc_lib
 
-fn :: drop_prog [String]    => [String]
-      drop_prog []          =  []
-      drop_prog (prog:rest) =  rest
+fn :: drop prog [String]    => [String]
+      drop prog []          =  []
+      drop prog (prog:rest) =  rest
 
-fn :: emit_apply_lines [String] => ()
-      emit_apply_lines []       =  ()
-      emit_apply_lines lines    =  echo (join_with lines (char_from_code 10))
+fn :: emit apply lines [String] => ()
+      emit apply lines []       =  ()
+      emit apply lines lines    =  echo (join with lines (char from code 10))
 
-fn :: finish_apply ([String], Int) => ()
-      finish_apply (lines, rc)     =
-        _ = emit_apply_lines lines
-        exit_if_nonzero rc
+fn :: finish apply ([String], Int) => ()
+      finish apply (lines, rc)     =
+        _ = emit apply lines lines
+        exit if nonzero rc
 
-fn :: exit_if_nonzero Int => ()
-      exit_if_nonzero 0   =  ()
-      exit_if_nonzero rc  =  sys_exit rc
+fn :: exit if nonzero Int => ()
+      exit if nonzero 0   =  ()
+      exit if nonzero rc  =  sys exit rc
 
 fn :: main => ()
       main =
-        args = drop_prog cli_args
+        args = drop prog (cli args)
         spec = parse apply args args
         res = evaluate apply spec
-        finish_apply res
+        finish apply res

@@ -13,7 +13,9 @@ type FileEntry = Entry String String FileKind Int Int Int String String Int Stri
 
 type LsSpec = l_one_per_line: Bool, l_multi_col: Bool, l_long: Bool, l_all: Bool, l_almost_all: Bool, l_classify: Bool, l_human: Bool, l_sort_size: Bool, l_sort_time: Bool, l_reverse: Bool, l_recursive: Bool, l_color: Bool, l_paths: [String]
 
-type FindExpr = ETrue | EName String | EIname String | EPath String | EType String | ESize Int Int | EMaxDepth Int | EMinDepth Int | EEmpty | ENot FindExpr | EAnd FindExpr FindExpr | EOr FindExpr FindExpr
+type FindExpr = ETrue | EName String | EIname String | EPath String | EType String | ESize Int Int | EMaxDepth Int | EMinDepth Int
+
+expand type FindExpr = EEmpty | ENot FindExpr | EAnd FindExpr FindExpr | EOr FindExpr FindExpr
 
 type FindSpec = f_paths: [String], f_expr: FindExpr, f_max_depth: Int, f_min_depth: Int, f_print0: Bool, f_exec_cmd: [String]
 
@@ -27,99 +29,99 @@ type MtreeSpec = m_create: Bool, m_spec_file: String, m_path: String, m_update: 
 
 op :: split lines String => [String]
       split lines s      =
-        | (str_len s) == 0 = []
-        | otherwise = split_lines_loop s 0 (str_len s) "" []
+        | (str len s) == 0 = []
+        | otherwise        = scan lines loop s 0 (str len s) "" []
 
-fn :: split_lines_loop String Int Int String [String] => [String]
-      split_lines_loop s idx len cur acc =
-        | idx >= len = finalize_lines cur acc
-        | (str_char_at s idx) == 10 = split_lines_loop s (idx + 1) len "" (acc :: [strip_cr cur])
-        | otherwise = split_lines_loop s (idx + 1) len (cur + (str_slice s idx (idx + 1))) acc
+fn :: scan lines loop String Int Int String [String] => [String]
+      scan lines loop s idx len cur acc =
+        | idx >= len                = finalize lines cur acc
+        | (str char at s idx) == 10 = scan lines loop s (idx + 1) len "" (acc :: [strip cr cur])
+        | otherwise                 = scan lines loop s (idx + 1) len (cur + (str slice s idx (idx + 1))) acc
 
-fn :: strip_cr String => String
-      strip_cr s      =
-        | (str_len s) == 0 = s
-        | (str_char_at s ((str_len s) - 1)) == 13 = str_slice s 0 ((str_len s) - 1)
-        | otherwise = s
+fn :: strip cr String => String
+      strip cr s      =
+        | (str len s) == 0                        = s
+        | (str char at s ((str len s) - 1)) == 13 = str slice s 0 ((str len s) - 1)
+        | otherwise                               = s
 
-fn :: finalize_lines String [String] => [String]
-      finalize_lines cur    acc      =
-        | (str_len cur) == 0 = acc
-        | otherwise = acc :: [strip_cr cur]
+fn :: finalize lines String [String] => [String]
+      finalize lines cur    acc      =
+        | (str len cur) == 0 = acc
+        | otherwise          = acc :: [strip cr cur]
 
 op :: split whitespace String => [String]
-      split whitespace s      =  split_ws_loop s 0 (str_len s) "" []
+      split whitespace s      =  split ws loop s 0 (str len s) "" []
 
-fn :: is_ws Int => Bool
-      is_ws c   =  (c == 32) or (c == 9) or (c == 10) or (c == 13)
+fn :: is ws Int => Bool
+      is ws c   =  (c == 32) or (c == 9) or (c == 10) or (c == 13)
 
-fn :: split_ws_loop String Int Int String [String] => [String]
-      split_ws_loop s idx len cur acc =
-        | idx >= len = push_nonempty cur acc
-        | is_ws (str_char_at s idx) = split_ws_loop s (idx + 1) len "" (push_nonempty cur acc)
-        | otherwise = split_ws_loop s (idx + 1) len (cur + (str_slice s idx (idx + 1))) acc
+fn :: split ws loop String Int Int String [String] => [String]
+      split ws loop s idx len cur acc =
+        | idx >= len                = push nonempty cur acc
+        | is ws (str char at s idx) = split ws loop s (idx + 1) len "" (push nonempty cur acc)
+        | otherwise                 = split ws loop s (idx + 1) len (cur + (str slice s idx (idx + 1))) acc
 
-fn :: push_nonempty String [String] => [String]
-      push_nonempty cur    acc      =
-        | (str_len cur) == 0 = acc
-        | otherwise = acc :: [cur]
+fn :: push nonempty String [String] => [String]
+      push nonempty cur    acc      =
+        | (str len cur) == 0 = acc
+        | otherwise          = acc :: [cur]
 
-fn :: join_with [String] String => String
-      join_with []       sep    =  ""
-      join_with (x:[])   sep    =  x
-      join_with (x:xs)   sep    =  x + sep + (join_with xs sep)
+fn :: join with [String] String => String
+      join with []       sep    =  ""
+      join with (x:[])   sep    =  x
+      join with (x:xs)   sep    =  x + sep + (join with xs sep)
 
-fn :: repeat_str String Int   => String
-      repeat_str s      count =
+fn :: repeat str String Int   => String
+      repeat str s      count =
         | count <= 0 = ""
-        | otherwise = s + (repeat_str s (count - 1))
+        | otherwise  = s + (repeat str s (count - 1))
 
-fn :: pad_left String Int   => String
-      pad_left s      width =
-        | (str_len s) >= width = s
-        | otherwise = (repeat_str " " (width - (str_len s))) + s
+fn :: pad left String Int   => String
+      pad left s      width =
+        | (str len s) >= width = s
+        | otherwise            = (repeat str " " (width - (str len s))) + s
 
-fn :: pad_right String Int   => String
-      pad_right s      width =
-        | (str_len s) >= width = s
-        | otherwise = s + (repeat_str " " (width - (str_len s)))
+fn :: pad right String Int   => String
+      pad right s      width =
+        | (str len s) >= width = s
+        | otherwise            = s + (repeat str " " (width - (str len s)))
 
-fn :: max_int Int Int => Int
-      max_int a   b   =
-        | a >= b = a
+fn :: max int Int Int => Int
+      max int a   b   =
+        | a >= b    = a
         | otherwise = b
 
-fn :: min_int Int Int => Int
-      min_int a   b   =
-        | a <= b = a
+fn :: min int Int Int => Int
+      min int a   b   =
+        | a <= b    = a
         | otherwise = b
 
-fn :: str_ends_with String String => Bool
-      str_ends_with s      suffix =
-        slen = str_len s
-        suflen = str_len suffix
-        check_suffix s suffix slen suflen
+fn :: str ends with String String => Bool
+      str ends with s      suffix =
+        slen = str len s
+        suflen = str len suffix
+        check suffix s suffix slen suflen
 
-fn :: check_suffix String String Int  Int    => Bool
-      check_suffix s      suffix slen suflen =
+fn :: check suffix String String Int Int => Bool
+      check suffix s suffix slen suflen =
         | slen < suflen = False
-        | otherwise = (str_slice s (slen - suflen) slen) == suffix
+        | otherwise     = (str slice s (slen - suflen) slen) == suffix
 
-fn :: str_list_nth [String] Int => String
-      str_list_nth []       n   =  ""
-      str_list_nth (x:xs)   n   =
-        | n <= 0 = x
-        | otherwise = str_list_nth xs (n - 1)
+fn :: str list nth [String] Int => String
+      str list nth []       n   =  ""
+      str list nth (x:xs)   n   =
+        | n <= 0    = x
+        | otherwise = str list nth xs (n - 1)
 
-fn :: int_list_nth [Int]  Int => Int
-      int_list_nth []     n   =  0
-      int_list_nth (x:xs) n   =
-        | n <= 0 = x
-        | otherwise = int_list_nth xs (n - 1)
+fn :: int list nth [Int]  Int => Int
+      int list nth []     n   =  0
+      int list nth (x:xs) n   =
+        | n <= 0    = x
+        | otherwise = int list nth xs (n - 1)
 
-fn :: list_len [A]    => Int
-      list_len []     =  0
-      list_len (_:xs) =  1 + (list_len xs)
+fn :: list len [A]    => Int
+      list len []     =  0
+      list len (_:xs) =  1 + (list len xs)
 
 fn :: fst (A, B) => A
       fst (a, _) =  a

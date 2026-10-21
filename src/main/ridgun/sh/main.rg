@@ -3,36 +3,36 @@
 
 import proc_lib
 
-fn :: drop_prog [String]    => [String]
-      drop_prog []          =  []
-      drop_prog (prog:rest) =  rest
+fn :: drop prog [String]    => [String]
+      drop prog []          =  []
+      drop prog (prog:rest) =  rest
 
-fn :: extract_sh_invocation [String]           => (String, [String])
-      extract_sh_invocation []                 =  (read_file "/dev/stdin", [])
-      extract_sh_invocation ("-c":[])          =  ("", [])
-      extract_sh_invocation ("-c":cmd_str:rest) = (cmd_str, rest)
-      extract_sh_invocation (script_path:rest) =  (read_file script_path, rest)
+fn :: extract sh invocation [String]           => (String, [String])
+      extract sh invocation []                 =  (read file "/dev/stdin", [])
+      extract sh invocation ("-c":[])          =  ("", [])
+      extract sh invocation ("-c":cmd_str:rest) = (cmd_str, rest)
+      extract sh invocation (script_path:rest) =  (read file script_path, rest)
 
-fn :: emit_stdout String => ()
-      emit_stdout ""     =  ()
-      emit_stdout text   =
-        | (str_char_at text ((str_len text) - 1)) == 10 = echo (str_slice text 0 ((str_len text) - 1))
-        | otherwise                                     = write_file "/dev/stdout" text
+fn :: emit stdout String => ()
+      emit stdout ""     =  ()
+      emit stdout text   =
+        | (str char at text ((str len text) - 1)) == 10 = echo (str slice text 0 ((str len text) - 1))
+        | otherwise                                     = write file "/dev/stdout" text
 
-fn :: finish_sh (String, Int)  => ()
-      finish_sh (text, status) =
-        _ = emit_stdout text
-        exit_sh status
+fn :: finish sh (String, Int)  => ()
+      finish sh (text, status) =
+        _ = emit stdout text
+        exit sh status
 
-fn :: exit_sh Int  => ()
-      exit_sh 0    =  ()
-      exit_sh code =  sys_exit code
+fn :: exit sh Int  => ()
+      exit sh 0    =  ()
+      exit sh code =  sys exit code
 
 fn :: main => ()
       main =
-        args = drop_prog cli_args
-        inv = extract_sh_invocation args
+        args = drop prog (cli args)
+        inv = extract sh invocation args
         src = fst inv
         pos = snd inv
         res = run shell script src with pos
-        finish_sh res
+        finish sh res
