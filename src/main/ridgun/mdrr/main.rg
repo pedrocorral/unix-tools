@@ -8,8 +8,16 @@ fn :: drop prog [String] => [String]
       drop prog []       =  []
       drop prog (_:rest) =  rest
 
+fn :: read md stdin chunk String String => String
+      read md stdin chunk acc "" = acc
+      read md stdin chunk acc chunk = read md stdin loop (acc + chunk)
+
+fn :: read md stdin loop String => String
+      read md stdin loop acc    =
+        read md stdin chunk acc (posix read 0 65536)
+
 fn :: read md inputs [String] [String] => String
-      read md inputs []       _        =  read file "/dev/stdin"
+      read md inputs []       _        =  read md stdin loop ""
       read md inputs files    acc      =
         loaded = load each md files acc
         join with loaded ((char from code 10) + (char from code 10))
@@ -17,7 +25,7 @@ fn :: read md inputs [String] [String] => String
 fn :: load each md [String]    [String] => [String]
       load each md []          acc      =  acc
       load each md ("-":rest)  acc      =
-        load each md rest (acc :: [read file "/dev/stdin"])
+        load each md rest (acc :: [read md stdin loop ""])
       load each md (path:rest) acc      =
         load each md rest (acc :: [read file path])
 

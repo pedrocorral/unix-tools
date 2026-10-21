@@ -3,6 +3,7 @@
 -- @tests TS-FILTER-002
 
 import test
+import posix
 import filter_lib
 
 fn :: build ascii range Int Int String => String

@@ -2,6 +2,8 @@
 -- @implements FR-FILTER-001
 -- @implements FR-FILTER-002
 
+import posix
+
 type JotParam = Omitted | Given Int
 
 type JotSpec = j_reps: JotParam, j_begin: JotParam, j_end: JotParam, j_step: JotParam, j_word: String, j_has_word: Bool, j_fmt: String, j_char_mode: Bool, j_sep: String, j_no_newline: Bool, j_random: Bool, j_prec: Int
@@ -951,14 +953,25 @@ fn :: parse_lam_inline_t String [String] Bool String String Int Int Int Int Bool
         code = char_at_or tc 0 10
         parse_lam_loop rest cur_s def_s cur_min cur_max def_min def_max cur_p def_p code code acc
 
-fn :: resolve_lam_path String => String
-      resolve_lam_path path   =
-        | path == "-" = "/dev/stdin"
-        | otherwise = path
+fn :: read stdin chunk String String => String
+      read stdin chunk acc    ""     =  acc
+      read stdin chunk acc    chunk  =  read stdin loop (acc + chunk)
+
+fn :: read stdin loop String => String
+      read stdin loop acc    =
+        read stdin chunk acc (posix read 0 65536)
+
+fn :: read stdin all => String
+      read stdin all =  read stdin loop ""
+
+fn :: read_lam_file String => String
+      read_lam_file path   =
+        | path == "-" = read stdin all
+        | otherwise = read_file path
 
 fn :: parse_lam_file String [String] String String Int Int Int Int Bool Bool Int Int [LamCol] => ([LamCol], String)
       parse_lam_file path rest cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
-        content = read_file (resolve_lam_path path)
+        content = read_lam_file path
         lines = split_lines_delim content 0 (str_len content) cur_t "" []
         col = LamCol cur_s cur_min cur_max cur_p lines
         parse_lam_loop rest def_s def_s def_min def_max def_min def_max def_p def_p def_t def_t (acc :: [col])

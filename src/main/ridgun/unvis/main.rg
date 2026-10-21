@@ -1,6 +1,7 @@
 -- unvis/main.rg — BSD unvis(1) visual character decoder
 -- @implements FR-FILTER-002
 
+import posix
 import filter_lib
 
 fn :: drop prog [String]    => [String]
@@ -8,7 +9,7 @@ fn :: drop prog [String]    => [String]
       drop prog (prog:rest) =  rest
 
 fn :: read unvis files [String] => String
-      read unvis files []       =  read file "/dev/stdin"
+      read unvis files []       =  read stdin all
       read unvis files (f:[])   =  read file f
       read unvis files (f:rest) =  (read file f) + (read unvis files rest)
 

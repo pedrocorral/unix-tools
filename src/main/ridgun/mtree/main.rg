@@ -8,10 +8,18 @@ fn :: drop prog [String]    => [String]
       drop prog []          =  []
       drop prog (prog:rest) =  rest
 
-fn :: resolve spec path String => String
-      resolve spec path ""     =  "/dev/stdin"
-      resolve spec path "-"    =  "/dev/stdin"
-      resolve spec path p      =  p
+fn :: read mtree stdin chunk String String => String
+      read mtree stdin chunk acc "" = acc
+      read mtree stdin chunk acc chunk = read mtree stdin loop (acc + chunk)
+
+fn :: read mtree stdin loop String => String
+      read mtree stdin loop acc    =
+        read mtree stdin chunk acc (posix read 0 65536)
+
+fn :: read mtree spec String => String
+      read mtree spec ""     =  read mtree stdin loop ""
+      read mtree spec "-"    =  read mtree stdin loop ""
+      read mtree spec p      =  read file p
 
 fn :: emit stdout String => ()
       emit stdout ""     =  ()
@@ -28,7 +36,7 @@ fn :: run mtree mode MtreeSpec => ()
 
 fn :: run mtree verify MtreeSpec => ()
       run mtree verify spec      =
-        raw_spec = read file (resolve spec path (m_spec_file spec))
+        raw_spec = read mtree spec (m_spec_file spec)
         entries = parse mtree spec text raw_spec
         diffs = verify mtree entries against (m_path spec) update (m_update spec)
         finish mtree verify diffs

@@ -8,8 +8,16 @@ fn :: drop prog [String]    => [String]
       drop prog []          =  []
       drop prog (prog:rest) =  rest
 
+fn :: read sh stdin chunk String String => String
+      read sh stdin chunk acc "" = acc
+      read sh stdin chunk acc chunk = read sh stdin loop (acc + chunk)
+
+fn :: read sh stdin loop String => String
+      read sh stdin loop acc    =
+        read sh stdin chunk acc (posix read 0 65536)
+
 fn :: extract sh invocation [String]           => (String, [String])
-      extract sh invocation []                 =  (read file "/dev/stdin", [])
+      extract sh invocation []                 =  (read sh stdin loop "", [])
       extract sh invocation ("-c":[])          =  ("", [])
       extract sh invocation ("-c":cmd_str:rest) = (cmd_str, rest)
       extract sh invocation (script_path:rest) =  (read file script_path, rest)
