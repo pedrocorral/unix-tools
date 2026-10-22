@@ -1,13 +1,13 @@
 ---
-updated: 2026-10-21T22:39
+updated: 2026-10-22T10:18
 active_task: none
 agent_runtime: antigravity
 ---
 # Session state — read this first when resuming
 
 ## Where we are (3 lines max)
-- All 9 road-map tasks (`TASK-0001` through `TASK-0009`) are completed (`docs/road-map/completed/2026-10/`).
-- All 17 utilities (`jot`, `rs`, `lam`, `vis`, `unvis`, `mdrr`, `ls`, `find`, `mtree`, `mktemp`, `apply`, `make`, `sh`, `timeout`, `nc`, `doas`, `sha256`) are compiled to native ELF64 binaries and consume `posix.rglib`, `io.rglib`, `crypto.rglib`, and `socket.rglib` from `/home/boogie/ridgun-libs` (strictly read-only) via `.stable/deps/`.
+- All 10 road-map tasks (`TASK-0001` through `TASK-0010`) are completed (`docs/road-map/completed/2026-10/`).
+- All 17 utilities (`jot`, `rs`, `lam`, `vis`, `unvis`, `mdrr`, `ls`, `find`, `mtree`, `mktemp`, `apply`, `make`, `sh`, `timeout`, `nc`, `doas`, `sha256`) are documented in `README.md`, compiled to native ELF64 binaries, and consume `posix.rglib`, `io.rglib`, `crypto.rglib`, and `socket.rglib` from `/home/boogie/ridgun-libs` (strictly read-only) via `.stable/deps/`.
 - All 5 test suites (`test_filter.rg`, `test_md.rg`, `test_fs.rg`, `test_proc.rg`, `test_sec.rg`) pass 100% (`283/283` unit, edge-case, PAL/I/O, socket, crypto, and E2E binary assertions passing).
 
 ## Files to load for the active task (nothing else)
