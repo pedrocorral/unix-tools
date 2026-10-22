@@ -273,33 +273,42 @@ Computes FIPS 180-4 SHA-256 digests, RFC 2104 HMAC-SHA256 authentication tags, a
 
 ---
 
-## Building & Testing
+## Building & Testing with `stable`
+
+This project is managed by **`stable`** (`build.rg`), Ridgun's self-hosted build orchestrator, dependency manager, parallel type-checker, canonical tabular formatter, and test runner.
 
 ### Prerequisites
-- `ridgunc` and `stable` (`v0.9.5` PAL) in `PATH`.
+- `stable` and `ridgunc` (`v0.9.5` PAL) in `PATH`.
 - `ridgun-libs` available at `/home/boogie/ridgun-libs`.
 
-### 1. Sync `.rglib` Dependencies
-Compile `posix.rglib`, `io.rglib`, `crypto.rglib`, and `socket.rglib` into `.stable/deps/` and `target/`:
+### 1. Inspect Project & Custom Tasks
 ```sh
-mkdir -p .stable/deps target
-for l in posix io crypto socket; do
-  ridgunc build --lib /home/boogie/ridgun-libs/src/main/ridgun/lib/$l.rg -o .stable/deps/$l.rglib
-  cp -f .stable/deps/$l.rglib target/$l.rglib
-done
+stable info
+stable tasks
 ```
 
-### 2. Compile All 17 Native ELF64 Binaries
+### 2. Sync `.rglib` Dependencies (`posix`, `io`, `crypto`, `socket`)
+Run the custom `sync libs` task defined in `build.rg` to compile and install the `.rglib` bundles into `.stable/deps/` and `target/`:
 ```sh
-for t in jot rs lam vis unvis mdrr ls find mtree mktemp apply make sh timeout nc doas sha256; do
-  ridgunc build src/main/ridgun/$t/main.rg -o target/$t
-done
+stable sync libs
 ```
 
-### 3. Type-Check & Run the Automated Test Suites (283 Assertions)
+### 3. Compile All 17 Native ELF64 Binaries
+Build every discovered utility in `src/main/ridgun/<tool>/main.rg` into `target/` (or pass a single target name such as `stable built mktemp`):
+```sh
+stable built
+```
+
+### 4. Type-Check, Format & Run the Automated Test Suites (283 Assertions)
+`stable` executes type-checking, formatting, and all 5 test suites (`test_filter.rg`, `test_md.rg`, `test_fs.rg`, `test_proc.rg`, `test_sec.rg`) concurrently across cores via Ridgun's `||map`:
 ```sh
 stable check
-for s in filter md fs proc sec; do
-  ridgunc run src/test/ridgun/test_$s.rg
-done
+stable format
+stable test
+```
+
+### 5. Install Executables Locally (Optional)
+Build and install the ELF64 binaries into `~/.local/bin/` and `./bin/`:
+```sh
+stable install
 ```
