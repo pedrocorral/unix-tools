@@ -49,7 +49,10 @@ fn :: test jot suite => ()
         rand_a = run jot ["-r", "-s,", "5", "10", "20", "42"]
         rand_b = run jot ["-r", "-s,", "5", "10", "20", "42"]
         _ = assert equals rand_a rand_b "jot -r deterministic PRNG with explicit seed 42"
-        assert true ((str len rand_a) >= 14) "jot -r generates 5 two-digit values in [10..20]"
+        _ = assert true ((str len rand_a) >= 14) "jot -r generates 5 two-digit values in [10..20]"
+        _ = assert equals (run jot ["0", "1", "10"]) "" "jot 0 repetitions boundary returns empty string"
+        _ = assert equals (run jot ["-w", "%c", "-s", "", "5", "97"]) "abcde" "jot -w %c formats integer sequence as ASCII chars"
+        assert equals (run jot ["-p", "3", "-s,", "3", "0.125", "0.375"]) "0.125,0.250,0.375" "jot -p 3 fixed-point 3-decimal sequence"
 
 fn :: test rs suite => ()
       test rs suite =
@@ -75,6 +78,8 @@ fn :: test rs suite => ()
         _ = assert equals (reshape text "a b c d" with (parse rs args ["-g4", "2", "2"])) ("a    b" + nl + "c    d") "rs -g4 custom gutter width"
         _ = assert equals (reshape text "1 100 20 3" with (parse rs args ["-j", "2", "2"])) (" 1  100" + nl + "20    3") "rs -j right-aligned columns"
         _ = assert equals (reshape text "1 100 20 3" with (parse rs args ["-tj", "2", "2"])) ("  1  20" + nl + "100   3") "rs -tj combined transpose + right-align"
+        _ = assert equals (reshape text ("only_one_line" + nl) with (parse rs args ["-k", "5", "2", "2"])) "" "rs -k 5 boundary when input has fewer than 5 lines"
+        _ = assert equals (reshape text "1,200,30,4" with (parse rs args ["-c,", "-C:", "-j", "2", "2"])) (" 1:200" + nl + "30:  4") "rs -c, -C: -j custom input/output delimiters with right-align"
         assert equals (reshape text "" with (parse rs args ["2", "2"])) "" "rs on empty input returns empty string"
 
 fn :: test lam suite => ()
@@ -90,6 +95,8 @@ fn :: test lam suite => ()
         col_short = LamCol "[" (0 - 4) 0 True ["x"]
         col_long = LamCol "|" 2 0 False ["1", "2", "3"]
         _ = assert equals (laminate columns [col_short, col_long] with "]") ("[x   | 1]" + nl + "[    | 2]" + nl + "[    | 3]") "lam uneven line counts with padding preserved on empty lines"
+        col_c = LamCol " / " 0 2 False ["long_val", "ok", "z"]
+        _ = assert equals (laminate columns [col_a, col_b, col_c] with ".") ("alpha -> 1 / lo." + nl + "beta -> 2 / ok." + nl + "gamma -> 3 / z.") "lam 3-column lamination with max-width truncation"
         assert equals (laminate columns [] with "") "" "lam with zero columns"
 
 fn :: test vis unvis suite => ()
@@ -141,7 +148,12 @@ fn :: test vis unvis suite => ()
         _ = assert equals (unvis decode enc_ascii_o) all_ascii "AC2: all 127 ASCII chars (1..127) roundtrip in -ow octal mode"
         spec_b = parse vis args ["-b"]
         enc_b = vis encode ("a" + bs + "b") with spec_b
-        assert equals enc_b ("a" + bs + "b") "vis -b does not double backslashes"
+        _ = assert equals enc_b ("a" + bs + "b") "vis -b does not double backslashes"
+        _ = assert equals (unvis decode (vis encode "" with spec_def)) "" "vis/unvis empty string boundary roundtrip"
+        ctrl_sample = ctrl_a + ctrl_z + del_ch + esc
+        _ = assert equals (unvis decode (vis encode ctrl_sample with spec_def)) ctrl_sample "vis/unvis control characters (SOH, SUB, DEL, ESC) roundtrip"
+        _ = assert equals (unvis decode ("ok" + bs)) ("ok" + bs) "unvis handles trailing lone backslash at EOF without crash"
+        assert equals (unvis decode (bs + "^A" + bs + "^?")) (ctrl_a + del_ch) "unvis decodes explicit \\^A and \\^? control sequences"
 
 fn :: test e2e binaries suite => ()
       test e2e binaries suite =
@@ -196,7 +208,9 @@ fn :: test e2e binaries suite => ()
         _ = assert str eq (read file "/tmp/ut_jot_rs_pipe.out") ("1  2  3" + nl + "4  5  6" + nl) "E2E pipeline: target/jot 6 1 6 | target/rs 2 3 via posix read fd 0"
         _ = shell exec "./target/jot 3 1 3 | ./target/lam - -s ': ' /tmp/ut_lam_a.in > /tmp/ut_jot_lam_pipe.out"
         _ = assert str eq (read file "/tmp/ut_jot_lam_pipe.out") ("1: alpha" + nl + "2: beta" + nl + "3: gamma" + nl) "E2E pipeline: target/jot 3 1 3 | target/lam - via posix read fd 0"
-        _ = shell exec "rm -f /tmp/ut_jot1.out /tmp/ut_rs.in /tmp/ut_rs.out /tmp/ut_lam_a.in /tmp/ut_lam_b.in /tmp/ut_lam.out /tmp/ut_lam_cap.out /tmp/ut_lam_colon.in /tmp/ut_lam_t.out /tmp/ut_vis.in /tmp/ut_vis1.enc /tmp/ut_vis1.dec /tmp/ut_vis2.enc /tmp/ut_vis2.dec /tmp/ut_vis3.enc /tmp/ut_vis3.dec /tmp/ut_import.in /tmp/ut_import.out /tmp/ut_no_nl.in /tmp/ut_crlf.in /tmp/ut_crlf.out /tmp/ut_bin256.in /tmp/ut_bin256.enc /tmp/ut_bin256.dec /tmp/ut_jot_rs_pipe.out /tmp/ut_jot_lam_pipe.out"
+        _ = shell exec "./target/jot -s ' ' 6 10 60 | ./target/rs -t 2 3 | ./target/vis -tw | ./target/unvis > /tmp/ut_4stage.out"
+        _ = assert str eq (read file "/tmp/ut_4stage.out") ("10  40" + nl + "20  50" + nl + "30  60" + nl) "E2E 4-stage pipeline: jot | rs -t | vis -tw | unvis"
+        _ = shell exec "rm -f /tmp/ut_jot1.out /tmp/ut_rs.in /tmp/ut_rs.out /tmp/ut_lam_a.in /tmp/ut_lam_b.in /tmp/ut_lam.out /tmp/ut_lam_cap.out /tmp/ut_lam_colon.in /tmp/ut_lam_t.out /tmp/ut_vis.in /tmp/ut_vis1.enc /tmp/ut_vis1.dec /tmp/ut_vis2.enc /tmp/ut_vis2.dec /tmp/ut_vis3.enc /tmp/ut_vis3.dec /tmp/ut_import.in /tmp/ut_import.out /tmp/ut_no_nl.in /tmp/ut_crlf.in /tmp/ut_crlf.out /tmp/ut_bin256.in /tmp/ut_bin256.enc /tmp/ut_bin256.dec /tmp/ut_jot_rs_pipe.out /tmp/ut_jot_lam_pipe.out /tmp/ut_4stage.out"
         ()
 
 fn :: main => ()
@@ -206,4 +220,4 @@ fn :: main => ()
         _ = test lam suite
         _ = test vis unvis suite
         _ = test e2e binaries suite
-        echo "All 83 Tier 1 BSD Filter unit & E2E binary assertions passed!"
+        echo "All 111 Tier 1 BSD Filter unit & E2E binary assertions passed!"

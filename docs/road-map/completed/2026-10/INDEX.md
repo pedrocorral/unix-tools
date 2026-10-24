@@ -14,3 +14,4 @@ Tasks completed this month, newest last.
 | `TASK-0009-implement-bsd-mktemp-timeout-nc-and-sha256-utiliti.md` | Implement BSD `mktemp`, `timeout`, `nc`, and `sha256` utilities using `ridgun-libs` | `FR-FS-004`, `FR-PROC-003`, `FR-SEC-002` |
 | `TASK-0010-write-descriptive-readme-md-and-push-repository-to.md` | Write descriptive `README.md` and push repository to GitHub | `ADR-0001` |
 | `TASK-0011-adopt-ridgun-v0-9-17-grammar-strict-checks-and-upd.md` | Adopt Ridgun v0.9.17 grammar, strict checks, and updated `/home/boogie/ridgun/libs` | `ADR-0001`, `FR-FILTER-001`..`FR-SEC-002` |
+| `TASK-0012-expand-unit-negative-security-boundary-and-e2e-tes.md` | Expand unit, negative security, boundary, and E2E test suites across all 17 utilities | `FR-FILTER-001`..`FR-SEC-002` |

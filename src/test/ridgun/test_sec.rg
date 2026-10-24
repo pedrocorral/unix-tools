@@ -27,7 +27,12 @@ fn :: test doas parser suite => ()
         _ = assert int equals (parse err line (parse doas config ("permit nopass :wheel" + nl + "allow root" + nl))) 2 "AC1: malformed action keyword reports syntax error on line 2"
         _ = assert int equals (parse err line (parse doas config ("permit nopass" + nl))) 1 "AC1: missing identity reports syntax error on line 1"
         _ = assert int equals (parse err line (parse doas config ("permit setenv \{ PATH pedro" + nl))) 1 "AC1: unclosed setenv brace reports syntax error on line 1"
-        assert int equals (parse err line (parse doas config ("permit pedro as" + nl))) 1 "AC1: missing target after 'as' reports syntax error on line 1"
+        _ = assert int equals (parse err line (parse doas config ("permit pedro as" + nl))) 1 "AC1: missing target after 'as' reports syntax error on line 1"
+        _ = assert int equals (parse err line (parse doas config ("permit pedro cmd" + nl))) 1 "AC1: missing command after 'cmd' reports syntax error on line 1"
+        _ = assert int equals (parse err line (parse doas config ("permit badopt pedro" + nl))) 1 "AC1: unknown keyword after action reports syntax error on line 1"
+        empty_cfg = parse doas config ("# only comments" + nl + "   " + nl)
+        _ = assert true (is parse ok empty_cfg) "AC1: comments-only doas.conf parses cleanly"
+        assert int equals (list len (unwrap rules empty_cfg)) 0 "AC1: comments-only doas.conf yields 0 rules"
 
 fn :: test doas policy suite => ()
       test doas policy suite =
@@ -35,6 +40,8 @@ fn :: test doas policy suite => ()
         _ = echo "=== 2. Testing OpenBSD 'Last Matching Rule Wins' Policy Engine (TS-SEC-001) ==="
         cfg = "permit :wheel" + nl + "permit nopass pedro as root cmd /sbin/reboot args" + nl + "deny pedro as root cmd /sbin/reboot args -f" + nl + "permit pedro as operator cmd /usr/bin/id" + nl
         rules = unwrap rules (parse doas config cfg)
+        d_empty = evaluate doas rules [] for "root" in ["wheel"] as "root" running "/bin/sh" with []
+        _ = assert equals (format doas audit d_empty) "deny" "AC2 security: empty rule list defaults to deny even for root"
         d1 = evaluate doas rules rules for "pedro" in ["users", "wheel"] as "root" running "/sbin/reboot" with []
         _ = assert equals (format doas audit d1) "permit nopass" "AC2: pedro running /sbin/reboot with 0 args matches rule 2 (permit nopass)"
         d2 = evaluate doas rules rules for "pedro" in ["users", "wheel"] as "root" running "/sbin/reboot" with ["-f"]
@@ -51,6 +58,7 @@ fn :: test doas policy suite => ()
         san_env = build doas env env_rule for "pedro" as "root"
         _ = assert true (list contains str san_env "DOAS_USER=pedro") "doas env sets DOAS_USER=pedro"
         _ = assert true (list contains str san_env "CUSTOM=42") "doas setenv adds CUSTOM=42"
+        _ = assert true (list contains str san_env "LOGNAME=root") "doas env sets LOGNAME to target user"
         assert true (not (list contains str san_env "USER=root")) "doas setenv -USER removes USER from environment"
 
 fn :: test doas e2e suite => ()
@@ -93,6 +101,11 @@ fn :: test sha256 suite => ()
         _ = assert true (str contains (snd r_missing) "No such file or directory") "AC1: sha256 reports missing file diagnostic"
         r_hmac = evaluate sha256 (parse sha256 args ["-q", "-k", "key", "-s", "The quick brown fox jumps over the lazy dog"]) with ""
         _ = assert str eq (snd r_hmac) "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8" "AC2: sha256 -q -k key -s '...' RFC HMAC-SHA256 vector"
+        r_hmac_rfc2 = evaluate sha256 (parse sha256 args ["-q", "-k", "Jefe", "-s", "what do ya want for nothing?"]) with ""
+        _ = assert str eq (snd r_hmac_rfc2) "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843" "AC2: sha256 RFC 4231 Test Case 2 (Jefe) HMAC-SHA256 vector"
+        long_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef_extra_key_bytes"
+        r_hmac_long = evaluate sha256 (parse sha256 args ["-q", "-k", long_key, "-s", "test payload"]) with ""
+        _ = assert int equals (str len (snd r_hmac_long)) 64 "AC2: sha256 HMAC with >64-byte key pre-hashes key and emits 64-char hex digest"
         r_arg = evaluate sha256 (parse sha256 args ["-q", "--argon2id", "saltsalt", "-s", "correcthorse"]) with ""
         phc = snd r_arg
         _ = assert true (str starts with phc "$argon2id$v=19$m=64,t=2,p=1$") "AC2: sha256 --argon2id emits Argon2id PHC string"
@@ -103,14 +116,20 @@ fn :: test sha256 suite => ()
         tampered_phc = (str slice phc 0 ((str len phc) - 1)) + "X"
         r_ver_tampered = evaluate sha256 (parse sha256 args ["--verify", tampered_phc, "-s", "correcthorse"]) with ""
         _ = assert false (check eq (fst r_ver_tampered) 0) "AC2: sha256 --verify rejects tampered Argon2id PHC hash"
+        r_ver_malformed = evaluate sha256 (parse sha256 args ["--verify", "$invalid$phc", "-s", "correcthorse"]) with ""
+        _ = assert false (check eq (fst r_ver_malformed) 0) "AC2 security: sha256 --verify rejects malformed PHC string"
         rc_sha_bin = shell exec "./target/sha256 -q -s abc > /tmp/ut_sha256_bin.out"
         _ = assert int equals rc_sha_bin 0 "E2E binary: target/sha256 -q -s abc exits 0"
         _ = assert str eq (read file "/tmp/ut_sha256_bin.out") ("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" + nl) "E2E binary: target/sha256 outputs exact SHA-256 hex"
         rc_sha_pipe = shell exec "printf 'abc' | ./target/sha256 -q > /tmp/ut_sha256_pipe.out"
         _ = assert int equals rc_sha_pipe 0 "E2E binary: printf 'abc' | target/sha256 -q reads fd 0 via posix read"
         _ = assert str eq (read file "/tmp/ut_sha256_pipe.out") ("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" + nl) "E2E binary: stdin pipeline SHA-256 matches -s abc"
+        rc_hmac_bin = shell exec "./target/sha256 -q -k Jefe -s 'what do ya want for nothing?' > /tmp/ut_sha256_hmac.out"
+        _ = assert int equals rc_hmac_bin 0 "E2E binary: target/sha256 -q -k Jefe exits 0"
+        _ = assert str eq (read file "/tmp/ut_sha256_hmac.out") ("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843" + nl) "E2E binary: target/sha256 -q -k Jefe matches RFC 4231 vector"
         _ = sys unlink "/tmp/ut_sha256_bin.out"
         _ = sys unlink "/tmp/ut_sha256_pipe.out"
+        _ = sys unlink "/tmp/ut_sha256_hmac.out"
         ()
 
 fn :: main => ()
@@ -119,4 +138,4 @@ fn :: main => ()
         _ = test doas policy suite
         _ = test doas e2e suite
         _ = test sha256 suite
-        echo "All 38 Tier 4 BSD Security (doas, doas.conf, sha256) unit & E2E assertions passed!"
+        echo "All 49 Tier 4 BSD Security (doas, doas.conf, sha256) unit & E2E assertions passed!"

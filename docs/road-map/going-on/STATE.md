@@ -2,7 +2,7 @@
 
 | Seat | State | Who | Task | Next action | Heartbeat |
 |---|---|---|---|---|---|
-| agent-001 | live | agent gemini@solarfall | none |  | 0 min ago |
-| agent-002 | live | agent gemini@solarfall | TASK-0011 | Update `build.rg`, `ADR-0001`, and `README.md` for `/home/bo | 41 min ago |
+| agent-001 | live | agent gemini@solarfall | TASK-0012 |  | 9 min ago |
+| agent-002 | live | agent gemini@solarfall | none |  | 0 min ago |
 
 Claim a seat: `aix agent claim`. A task is started with `aix task start ID` and signed by your seat; a task another live seat holds is refused.

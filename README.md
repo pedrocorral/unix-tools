@@ -300,7 +300,7 @@ stable strict binaries
 stable built
 ```
 
-### 4. Type-Check, Format & Run the Automated Test Suites (283 Assertions)
+### 4. Type-Check, Format & Run the Automated Test Suites (338 Assertions)
 `stable` executes type-checking, formatting, and all 5 test suites (`test_filter.rg`, `test_md.rg`, `test_fs.rg`, `test_proc.rg`, `test_sec.rg`) concurrently across cores via Ridgun's `||map`:
 ```sh
 stable check

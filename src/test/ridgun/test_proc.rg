@@ -20,7 +20,13 @@ fn :: test apply suite => ()
         _ = assert equals (join with (fst res3) " | ") "cp src1 dst1" "apply -a @ custom magic character"
         spec4 = parse apply args ["-d", "-3", "echo", "x", "y", "z", "u", "v", "w"]
         res4 = evaluate apply spec4
-        assert equals (join with (fst res4) " | ") "echo x y z | echo u v w" "apply -3 without %N appends 3 arguments per command"
+        _ = assert equals (join with (fst res4) " | ") "echo x y z | echo u v w" "apply -3 without %N appends 3 arguments per command"
+        spec5 = parse apply args ["-d", "-0", "date", "a", "b"]
+        res5 = evaluate apply spec5
+        _ = assert equals (join with (fst res5) " | ") "date a | date b" "apply -0 clamps group size to 1"
+        spec6 = parse apply args ["-d", "-2", "echo %1 %2", "only_one"]
+        res6 = evaluate apply spec6
+        assert equals (join with (fst res6) " | ") "echo only_one " "apply -2 with uneven trailing argument substitutes empty string for %2"
 
 fn :: test make suite => ()
       test make suite =
@@ -38,7 +44,13 @@ fn :: test make suite => ()
         mk_cycle = "a: b" + nl + tab + "echo a" + nl + "b: c" + nl + tab + "echo b" + nl + "c: a" + nl + tab + "echo c" + nl
         mres_cyc = evaluate make mk_cycle with mspec1
         _ = assert true (not (fst mres_cyc)) "AC2: make rejects circular dependency graph"
-        assert equals (str list nth (snd mres_cyc) 0) "make: Graph cycles through a" "AC2: make reports cycle target name"
+        _ = assert equals (str list nth (snd mres_cyc) 0) "make: Graph cycles through a" "AC2: make reports cycle target name"
+        mres_missing = evaluate make mk_src with (parse make args ["-n", "nonexistent_target"])
+        _ = assert false (fst mres_missing) "make fails when requested target has no rule and no file"
+        _ = assert equals (str list nth (snd mres_missing) 0) "make: don't know how to make nonexistent_target" "make reports don't know how to make <target>"
+        mk_imm = "X := first" + nl + "Y := $(X)_second" + nl + "X := changed" + nl + "all: dep1" + nl + tab + "@echo $(Y) $< $$HOME" + nl + "dep1:" + nl + tab + "true" + nl
+        mres_imm = evaluate make mk_imm with mspec1
+        assert equals (join with (snd mres_imm) " ; ") "true ; echo first_second dep1 $HOME" "make := immediate expansion, $< first prerequisite, and $$ literal dollar"
 
 fn :: test sh suite => ()
       test sh suite =
@@ -71,7 +83,13 @@ fn :: test sh suite => ()
         _ = assert equals (fst r_test) ("ok_test" + nl) "sh test / [ built-in string and numeric operators"
         r_exit = run shell script "echo before; exit 7; echo after" with []
         _ = assert equals (fst r_exit) ("before" + nl) "sh exit stops script execution immediately"
-        assert int equals (snd r_exit) 7 "sh exit propagates exit code 7"
+        _ = assert int equals (snd r_exit) 7 "sh exit propagates exit code 7"
+        r_status = run shell script "false; A=$?; true; B=$?; echo \"$A:$B\"" with []
+        _ = assert equals (fst r_status) ("1:0" + nl) "sh $? tracks exit status of previous command"
+        r_comment = run shell script ("# full line comment" + nl + "echo visible # trailing token") with []
+        _ = assert true (str starts with (fst r_comment) "visible") "sh ignores # comment lines"
+        r_fs_test = run shell script "[ -d /tmp ] && [ ! -e /tmp/nonexistent_ut_sh_path_999 ] && echo fs_ok" with []
+        assert equals (fst r_fs_test) ("fs_ok" + nl) "sh [ -d /tmp ] and [ ! -e ... ] filesystem predicates"
 
 fn :: test proc e2e suite => ()
       test proc e2e suite =
@@ -127,6 +145,11 @@ fn :: test timeout nc suite => ()
         _ = assert int equals (parse duration ms "2s") 2000 "timeout duration parser: 2s"
         _ = assert int equals (parse duration ms "1m") 60000 "timeout duration parser: 1m"
         _ = assert int equals (parse duration ms "1h") 3600000 "timeout duration parser: 1h"
+        _ = assert int equals (parse duration ms "1d") 86400000 "timeout duration parser: 1d"
+        to_empty = execute timeout (parse timeout args ["1s"])
+        _ = assert int equals (snd to_empty) 125 "timeout without command returns status 125"
+        to_zero_dur = execute timeout (parse timeout args ["0s", "echo", "hi"])
+        _ = assert int equals (snd to_zero_dur) 124 "timeout with 0s deadline returns status 124 immediately"
         ts_flags = parse timeout args ["-k", "120ms", "-s", "TERM", "--preserve-status", "50ms", "sleep", "2"]
         _ = assert int equals (to_kill_ms ts_flags) 120 "AC1: timeout -k 120ms parses grace period"
         _ = assert str eq (to_sig ts_flags) "TERM" "AC1: timeout -s TERM parses signal name"
@@ -153,6 +176,11 @@ fn :: test timeout nc suite => ()
         _ = assert true (str contains (snd nc_closed) "failed") "AC2: nc -zv against closed port emits failure diagnostic"
         nc_bad_port = execute nc (parse nc args ["-z", "127.0.0.1", "0"]) with ""
         _ = assert int equals (fst nc_bad_port) 1 "AC2: nc rejects invalid port 0 with status 1"
+        nc_high_port = execute nc (parse nc args ["-l", "70000"]) with ""
+        _ = assert int equals (fst nc_high_port) 1 "AC2: nc -l rejects port > 65535 with status 1"
+        nc_bad_unix = execute nc (parse nc args ["-U", "../unsafe_traversal.sock"]) with ""
+        _ = assert int equals (fst nc_bad_unix) 1 "AC2 security: nc -U rejects relative/traversal unix socket path"
+        _ = assert str eq (snd nc_bad_unix) "nc: invalid unix socket path" "AC2 security: nc -U reports invalid unix socket path"
         rc_to_bin = shell exec "./target/timeout 1s echo bin_ok > /tmp/ut_to_bin.out"
         _ = assert int equals rc_to_bin 0 "E2E binary: target/timeout 1s echo bin_ok exits 0"
         _ = assert str eq (read file "/tmp/ut_to_bin.out") ("bin_ok" + nl) "E2E binary: target/timeout emits stdout"
@@ -170,4 +198,4 @@ fn :: main => ()
         _ = test proc e2e suite
         _ = test pal io suite
         _ = test timeout nc suite
-        echo "All 63 Tier 3 BSD Process, Build, PAL I/O & Socket (apply, make, sh, timeout, nc) assertions passed!"
+        echo "All 77 Tier 3 BSD Process, Build, PAL I/O & Socket (apply, make, sh, timeout, nc) assertions passed!"

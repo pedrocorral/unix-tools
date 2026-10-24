@@ -38,7 +38,15 @@ fn :: test blocks alerts lists suite => ()
         spec_no_fm = parse mdrr args ["-p", "-H"]
         out_no_fm = render markdown doc with spec_no_fm
         _ = assert true (not (str contains ci out_no_fm "front-matter")) "mdrr -H suppresses YAML front-matter block"
-        assert true (str contains ci out_no_fm "☐ Pending task") "AC1: Unicode mode renders ☐ and ☑ task checkboxes"
+        _ = assert true (str contains ci out_no_fm "☐ Pending task") "AC1: Unicode mode renders ☐ and ☑ task checkboxes"
+        alerts_doc = "> [!IMPORTANT]" + nl + "> Critical info." + nl + nl + "> [!WARNING]" + nl + "> Careful here." + nl + nl + "> [!CAUTION]" + nl + "> Danger zone." + nl + nl + "## Subheading" + nl + "### Level 3" + nl + "---" + nl
+        out_alerts = render markdown alerts_doc with spec_pa
+        _ = assert true (str contains ci out_alerts "[!] IMPORTANT") "AC1: > [!IMPORTANT] renders ASCII alert header"
+        _ = assert true (str contains ci out_alerts "[!] WARNING") "AC1: > [!WARNING] renders ASCII alert header"
+        _ = assert true (str contains ci out_alerts "[X] CAUTION") "AC1: > [!CAUTION] renders ASCII alert header"
+        _ = assert true (str contains ci out_alerts ("Subheading" + nl + "----------")) "AC1: H2 renders '-' underline in -a mode"
+        _ = assert true (str contains ci out_alerts "### Level 3") "AC1: H3 renders ### prefix in -a mode"
+        assert equals (render markdown "" with spec_pa) "" "mdrr on empty document returns empty string"
 
 fn :: test tables and code suite => ()
       test tables and code suite =
@@ -69,7 +77,11 @@ fn :: test toc and section suite => ()
         out_sec = render markdown doc with spec_sec
         _ = assert true (str contains ci out_sec "Run stable built.") "AC3: mdrr -s Installation includes Installation body"
         _ = assert true (str contains ci out_sec "### Linux") "AC3: mdrr -s Installation includes nested ### Linux subsection"
-        assert true (not (str contains ci out_sec "Pass -t or -s.")) "AC3: mdrr -s Installation stops before peer ## Usage section"
+        _ = assert true (not (str contains ci out_sec "Pass -t or -s.")) "AC3: mdrr -s Installation stops before peer ## Usage section"
+        out_missing_sec = render markdown doc with (parse mdrr args ["-p", "-a", "-s", "NonExistent"])
+        _ = assert equals out_missing_sec "" "AC3: mdrr -s on missing section heading returns empty string"
+        unclosed_in = format inline "Unclosed **bold and `code" plain True
+        assert true (str contains ci unclosed_in "bold") "mdrr format inline handles unclosed markers gracefully"
 
 fn :: test mdrr e2e suite => ()
       test mdrr e2e suite =
@@ -92,7 +104,11 @@ fn :: test mdrr e2e suite => ()
         _ = assert false (str contains ci sec_out "Fast compilation") "AC3 E2E binary: target/mdrr -s Benchmarks excludes Features section"
         _ = shell exec "cat /tmp/ut_mdrr_sample.md | ./target/mdrr -p -a -t > /tmp/ut_mdrr_stdin.out"
         _ = assert str eq (read file "/tmp/ut_mdrr_stdin.out") ("* Solstice Docs" + nl + "  * Features" + nl + "  * Benchmarks" + nl) "E2E pipeline: cat | target/mdrr -p -a -t reads fd 0 via posix read"
-        _ = shell exec "rm -f /tmp/ut_mdrr_sample.md /tmp/ut_mdrr_ansi.out /tmp/ut_mdrr_toc.out /tmp/ut_mdrr_sec.out /tmp/ut_mdrr_stdin.out"
+        _ = write file "/tmp/ut_mdrr_wrap.md" ("One two three four five six seven eight nine ten." + nl)
+        _ = shell exec "./target/mdrr -p -a -w 18 /tmp/ut_mdrr_wrap.md > /tmp/ut_mdrr_wrap.out"
+        wrap_lines = split lines (read file "/tmp/ut_mdrr_wrap.md")
+        _ = assert true ((list len (split lines (read file "/tmp/ut_mdrr_wrap.out"))) >= 3) "E2E binary: target/mdrr -w 18 wraps paragraph into multiple lines"
+        _ = shell exec "rm -f /tmp/ut_mdrr_sample.md /tmp/ut_mdrr_ansi.out /tmp/ut_mdrr_toc.out /tmp/ut_mdrr_sec.out /tmp/ut_mdrr_stdin.out /tmp/ut_mdrr_wrap.md /tmp/ut_mdrr_wrap.out"
         ()
 
 fn :: main => ()
@@ -102,4 +118,4 @@ fn :: main => ()
         _ = test tables and code suite
         _ = test toc and section suite
         _ = test mdrr e2e suite
-        echo "All 31 mdrr(1) Terminal Markdown Reader unit & E2E assertions passed!"
+        echo "All 41 mdrr(1) Terminal Markdown Reader unit & E2E assertions passed!"
