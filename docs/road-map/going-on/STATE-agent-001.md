@@ -1,7 +1,7 @@
 ---
 active_task: none
-active_skill: core-session-handoff
-current_step: Completed TASK-0012 (expanded all 5 test suites to 338 assertions)
+active_skill: core-sdd-workflow
+current_step: Implemented initial 448-assertion test battery across 8 suites and recorded TASK-0014 in pending/next for porting upstream BSD/OpenBSD sh and doas regression tests
 open_blockers: []
 open_conflicts: []
 last_updated: 2026-10-24
@@ -9,8 +9,8 @@ last_updated: 2026-10-24
 # Session State (agent-001)
 
 ## Active work
-- Task: `none` (`TASK-0001`..`TASK-0012` completed and archived to `docs/road-map/completed/2026-10/`)
-- Step: All 17 utilities, 4 `.rglib` dependencies, and 5 test suites (`338/338` assertions) verified with `ridgunc check --strict`, `ridgunc build --strict`, and `stable test`.
+- Task: `TASK-0013` (`docs/road-map/going-on/TASK-0013-design-and-implement-exhaustive-uncompromising-tes.md`)
+- Queued next: `TASK-0014` (`docs/road-map/pending/next/TASK-0014-port-additional-official-bsd-openbsd-regression-te.md` — port additional official BSD/OpenBSD regression test assertions for `sh` and `doas` from upstream original source)
 
 ## Next action (one line)
-- Ready for next user instruction.
+- Implement full Pure Ridgun engines for `ls`, `make`, `timeout`, `nc`, `doas`, and `sh` to pass all 448 assertions in `TASK-0013`, then start `TASK-0014`.

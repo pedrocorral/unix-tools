@@ -7,6 +7,24 @@ fn :: drop prog [String] => [String]
       drop prog []       =  []
       drop prog (_:rest) =  rest
 
+fn :: read stdin nonblocking String => String
+      read stdin nonblocking acc    =
+        read stdin after poll (sys poll 0 1 50) acc
+
+fn :: read stdin after poll Int String => String
+      read stdin after poll prc acc =
+        | prc > 0   = read stdin chunk (posix read 0 65536) acc
+        | otherwise = acc
+
+fn :: read stdin chunk String String => String
+      read stdin chunk ""     acc    =  acc
+      read stdin chunk chunk  acc    =  read stdin nonblocking (acc + chunk)
+
+fn :: select nc stdin NcSpec => String
+      select nc stdin spec   =
+        | nc_zero spec = ""
+        | otherwise    = read stdin nonblocking ""
+
 fn :: emit stdout String => ()
       emit stdout ""     =  ()
       emit stdout text   =
@@ -25,5 +43,6 @@ fn :: main => ()
       main =
         args = drop prog (cli args)
         spec = parse nc args args
-        res = execute nc spec with ""
+        payload = select nc stdin spec
+        res = execute nc spec with payload
         finish nc res

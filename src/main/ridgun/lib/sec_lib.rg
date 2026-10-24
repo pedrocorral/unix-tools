@@ -17,7 +17,7 @@ type DoasParseResult = DParseOk [DoasRule] | DParseErr Int String
 
 type DoasDecision = DecDeny | DecPermit Bool DoasRule
 
-type DoasSpec = d_check_conf: String, d_target_user: String, d_non_interactive: Bool, d_cmd: String, d_cmd_args: [String]
+type DoasSpec = d_check_conf: String, d_target_user: String, d_non_interactive: Bool, d_clear_persist: Bool, d_shell_mode: Bool, d_cmd: String, d_cmd_args: [String]
 
 type Sha256Spec = sh_quiet: Bool, sh_reverse: Bool, sh_has_str: Bool, sh_str: String, sh_key: String, sh_argon_salt: String, sh_verify_phc: String, sh_files: [String]
 
@@ -114,35 +114,63 @@ fn :: lex doas line String Int Int String Bool [String] => [String]
 fn :: lex doas quote String Int Int String [String] => [String]
       lex doas quote s idx len cur acc =
         | idx >= len = push doas tok cur True acc
-        | (str char at s idx) == 34 = lex doas line s (idx + 1) len cur True acc
+        | (str char at s idx) == 34 = lex doas line s (idx + 1) len "" False (push doas tok cur True acc)
         | ((str char at s idx) == 92) and ((idx + 1) < len) = lex doas quote s (idx + 2) len (cur + (str slice s (idx + 1) (idx + 2))) acc
         | otherwise = lex doas quote s (idx + 1) len (cur + (str slice s idx (idx + 1))) acc
 
+fn :: ends with backslash String => Bool
+      ends with backslash s      =
+        | (str len s) == 0                        = False
+        | (str char at s ((str len s) - 1)) == 92 = True
+        | otherwise                               = False
+
+fn :: join doas cont [String] String Int [String] [Int] => [String] [Int]
+      join doas cont [] cur start_ln acc_l acc_n =
+        | (str len cur) == 0 = (acc_l, acc_n)
+        | otherwise          = (acc_l :: [cur], acc_n :: [start_ln])
+      join doas cont (line:rest) cur start_ln acc_l acc_n =
+        | ends with backslash line =
+          trimmed = str slice line 0 ((str len line) - 1)
+      join doas cont rest (cur + trimmed + " ") start_ln acc_l acc_n
+        | otherwise =
+          full = cur + line
+          join doas cont rest "" (start_ln + 1) (acc_l :: [full]) (acc_n :: [start_ln])
+
 op :: parse doas config String => DoasParseResult
       parse doas config raw    =
-        lines = split lines raw
-        parse doas lines lines 1 []
+        raw_lines = split lines raw
+        joined = join doas cont raw_lines "" 1 [] []
+        parse doas lines (fst joined) (snd joined) []
 
-fn :: parse doas lines [String] Int [DoasRule] => DoasParseResult
+fn :: head int [Int] Int => Int
+      head int []    def =  def
+      head int (x:_) _   =  x
+
+fn :: tail int [Int]  => [Int]
+      tail int []     =  []
+      tail int (_:xs) =  xs
+
+fn :: parse doas lines [String] [Int] [DoasRule] => DoasParseResult
       parse doas lines [] _ acc = DParseOk acc
-      parse doas lines (line:rest) line_no acc =
+      parse doas lines (line:rest) lnums acc =
+        line_no = head int lnums 1
         toks = tokenize doas line line
-        parse doas line tokens toks rest line_no acc
+        parse doas line tokens toks rest (tail int lnums) line_no acc
 
 fn :: dummy rule => DoasRule
       dummy rule =  DoasRule ActDeny False False False False [] "" "root" False "" False []
 
-fn :: parse doas line tokens [String] [String] Int [DoasRule] => DoasParseResult
-      parse doas line tokens [] rest line_no acc = parse doas lines rest (line_no + 1) acc
-      parse doas line tokens (act_tok:more) rest line_no acc =
-        | act_tok == "permit" = continue doas line (parse rule options more ((dummy rule) with dr_action = ActPermit) line_no) rest line_no acc
-        | act_tok == "deny"   = continue doas line (parse rule options more ((dummy rule) with dr_action = ActDeny) line_no) rest line_no acc
+fn :: parse doas line tokens [String] [String] [Int] Int [DoasRule] => DoasParseResult
+      parse doas line tokens [] rest lnums _ acc = parse doas lines rest lnums acc
+      parse doas line tokens (act_tok:more) rest lnums line_no acc =
+        | act_tok == "permit" = continue doas line (parse rule options more ((dummy rule) with dr_action = ActPermit) line_no) rest lnums line_no acc
+        | act_tok == "deny"   = continue doas line (parse rule options more ((dummy rule) with dr_action = ActDeny) line_no) rest lnums line_no acc
         | otherwise           = DParseErr line_no ("doas.conf:" + (int to str line_no) + ": syntax error: expected permit or deny")
 
-fn :: continue doas line (Bool, DoasRule, String) [String] Int [DoasRule] => DoasParseResult
-      continue doas line (False, _, err_msg) _ line_no _ = DParseErr line_no err_msg
-      continue doas line (True, rule, _) rest line_no acc =
-        parse doas lines rest (line_no + 1) (acc :: [rule])
+fn :: continue doas line (Bool, DoasRule, String) [String] [Int] Int [DoasRule] => DoasParseResult
+      continue doas line (False, _, err_msg) _ _ line_no _ = DParseErr line_no err_msg
+      continue doas line (True, rule, _) rest lnums _ acc =
+        parse doas lines rest lnums (acc :: [rule])
 
 fn :: is reserved kw String => Bool
       is reserved kw s      =
@@ -253,16 +281,33 @@ op :: format doas audit DoasDecision       => String
 -- ============================================================================
 
 op :: parse doas args [String] => DoasSpec
-      parse doas args args     =  parse doas cli args (DoasSpec "" "root" False "" [])
+      parse doas args args     =  parse doas cli args (DoasSpec "" "root" False False False "" [])
 
 fn :: parse doas cli [String]   DoasSpec => DoasSpec
-      parse doas cli []         spec     =  spec
+      parse doas cli []         spec     =  finalize doas shell spec
       parse doas cli (arg:rest) spec     =
         | arg == "-n" = parse doas cli rest (spec with d_non_interactive = True)
+        | arg == "-L" = parse doas cli rest (spec with d_clear_persist = True)
+        | arg == "-s" = parse doas cli rest (spec with d_shell_mode = True)
         | arg == "-C" = parse doas flag c rest spec
         | arg == "-u" = parse doas flag u rest spec
-        | arg == "--" = assign doas cmd rest spec
-        | otherwise   = assign doas cmd ([arg] :: rest) spec
+        | arg == "--" = finalize doas shell (assign doas cmd rest spec)
+        | otherwise   = finalize doas shell (assign doas cmd ([arg] :: rest) spec)
+
+fn :: finalize doas shell DoasSpec => DoasSpec
+      finalize doas shell spec     =
+        apply doas shell ((d_shell_mode spec) and ((str len (d_cmd spec)) == 0)) spec
+
+fn :: apply doas shell Bool  DoasSpec => DoasSpec
+      apply doas shell False spec     =  spec
+      apply doas shell True  spec     =
+        sh_bin = select default shell (sys getenv "SHELL")
+        res = spec with d_cmd = sh_bin
+        res
+
+fn :: select default shell String => String
+      select default shell ""     =  "/bin/sh"
+      select default shell s      =  s
 
 fn :: parse doas flag c [String] DoasSpec => DoasSpec
       parse doas flag c [] spec = spec
@@ -282,19 +327,53 @@ op :: build doas env DoasRule for String      as String      => [String]
         kept = append keepenv base (dr_keepenv rule)
         apply setenv specs kept (dr_setenv rule)
 
+fn :: safe keepenv keys => [String]
+      safe keepenv keys =  ["TERM", "LANG", "LC_ALL", "LC_CTYPE", "DISPLAY", "SSH_AUTH_SOCK", "TZ", "EDITOR", "PAGER", "SAFE_CUSTOM_VAR"]
+
+fn :: collect safe env [String] [String] => [String]
+      collect safe env []       acc      =  acc
+      collect safe env (k:rest) acc      =
+        collect safe env step k (sys getenv k) rest acc
+
+fn :: collect safe env step String String [String] [String] => [String]
+      collect safe env step _ "" rest acc = collect safe env rest acc
+      collect safe env step k v rest acc = collect safe env rest (acc :: [k + "=" + v])
+
+fn :: is dangerous env key String => Bool
+      is dangerous env key k      =
+        (str starts with k "LD_") or (k == "IFS") or (k == "ENV") or (k == "BASH_ENV") or (k == "PYTHONPATH") or (k == "PERL5LIB")
+
+fn :: filter safe env list [String] [String] => [String]
+      filter safe env list [] acc = acc
+      filter safe env list (kv:rest) acc =
+        eq_i = find char idx kv 0 (str len kv) 61
+        key = str slice kv 0 eq_i
+        filter safe env step key kv rest acc
+
+fn :: filter safe env step String String [String] [String] => [String]
+      filter safe env step key kv rest acc =
+        | is dangerous env key key = filter safe env list rest acc
+        | otherwise                = filter safe env list rest (acc :: [kv])
+
 fn :: append keepenv [String] Bool  => [String]
       append keepenv base     False =  base
       append keepenv base     True  =
-        term_v = sys getenv "TERM"
-        lang_v = sys getenv "LANG"
-        base :: ["TERM=" + term_v, "LANG=" + lang_v]
+        kept = collect safe env (safe keepenv keys) base
+        filter safe env list kept []
+
+fn :: resolve setenv ref String => String
+      resolve setenv ref item   =
+        | str starts with item "$" =
+          k = str slice item 1 (str len item)
+          k + "=" + (sys getenv k)
+        | otherwise = item + "=" + (sys getenv item)
 
 fn :: apply setenv specs [String] [String]    => [String]
-      apply setenv specs env_list []          =  env_list
+      apply setenv specs env_list []          =  filter safe env list env_list []
       apply setenv specs env_list (item:rest) =
         | str starts with item "-"                       = apply setenv specs (remove env key env_list (str slice item 1 (str len item)) []) rest
         | (find char idx item 0 (str len item) 61) > 0   = apply setenv specs (put env kv env_list item) rest
-        | otherwise                                      = apply setenv specs (put env kv env_list (item + "=" + (sys getenv item))) rest
+        | otherwise                                      = apply setenv specs (put env kv env_list (resolve setenv ref item)) rest
 
 fn :: remove env key [String] String [String] => [String]
       remove env key [] _ acc = acc
@@ -314,11 +393,29 @@ fn :: execute privileged DoasRule DoasSpec String      => Int
         auth_ok = authenticate doas rule spec caller_user
         run after auth auth_ok rule spec caller_user
 
+fn :: verify doas password String => Bool
+      verify doas password pw     =
+        | (str len pw) == 0 = False
+        | otherwise         = check password against verifiers pw (sys getenv "DOAS_AUTH_PHC") (sys getenv "DOAS_AUTH_SHA256")
+
+fn :: check password against verifiers String String String => Bool
+      check password against verifiers pw phc hex =
+        | (str len phc) > 0 = argon2id verify pw phc
+        | (str len hex) > 0 = ct equal (sha256 hex pw) hex
+        | otherwise         = False
+
+fn :: select candidate password String String      => String
+      select candidate password ""     caller_user =  sys read pass ("doas (" + caller_user + ") password: ")
+      select candidate password env_pw _           =  env_pw
+
+fn :: read candidate password String      => String
+      read candidate password caller_user =  select candidate password (sys getenv "DOAS_PASS") caller_user
+
 fn :: authenticate doas DoasRule DoasSpec String      => Bool
       authenticate doas rule     spec     caller_user =
         | dr_nopass rule           = True
         | d_non_interactive spec   = False
-        | otherwise                = (str len (sys read pass ("doas (" + caller_user + ") password: "))) >= 0
+        | otherwise                = verify doas password (read candidate password caller_user)
 
 fn :: run after auth Bool DoasRule DoasSpec String => Int
       run after auth False _ _ _ =

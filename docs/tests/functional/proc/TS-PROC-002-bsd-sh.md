@@ -4,21 +4,21 @@ title: BSD sh(1) Almquist-style command interpreter and shell AST evaluator
 level: functional
 covers: [FR-PROC-002]
 status: automated
-automated_in: [src/test/ridgun/test_proc.rg]
+automated_in: [src/test/ridgun/test_proc.rg, src/test/ridgun/test_sh.rg]
 ---
 # TS-PROC-002 — BSD `sh(1)` Verification
 
 ## Preconditions / fixtures
-- Pure Ridgun `sh` interpreter (`src/main/ridgun/sh/main.rg`) and shell scripts testing quoting, expansions, control flow, pipelines, redirections, and built-ins.
+- Pure Ridgun `sh` interpreter (`src/main/ridgun/sh/main.rg` and `src/main/ridgun/lib/proc_lib.rg`) and exhaustive test suites in `src/test/ridgun/test_proc.rg` and `src/test/ridgun/test_sh.rg`.
 
 ## Steps / inputs
-1. Execute `sh -c 'X=hello; echo "$X world"'` and parameter expansions (`${VAR}`, `${VAR:-default}`, `$?`, `$#`, `$1`).
-2. Execute conditional lists (`&&`, `||`, `;`), pipelines (`|`), redirections (`>`, `>>`, `<`, `2>&1`), `if/elif/else/fi`, `for/in/do/done`, `while/do/done`, and built-ins (`cd`, `pwd`, `export`, `unset`, `test`/`[`, `true`, `false`, `exit`, `.`).
-3. Verify Ridgun v0.9.5 PAL & `posix`/`io` library integration (`null device`, `path separator`, `process exists`, `io read with timeout`, `append file`, `is file`, `sys unlink`).
+1. Test quoting (`'...'`, `"..."`, `\`, line continuations, `#` comments vs mid-word `#`), special parameters (`$?`, real `$$` via `sys getpid`, `$#`, `$0`, `$1`..`${10}`, `$*`, `$@`), parameter expansions (`:-`, `-`, `:=`, `=`, `:+`, `+`, `:?`, `${#var}`, `#`, `##`, `%`, `%%`), nested command substitution `$(...)` and `` `...` ``, arithmetic expansion `$((...))` (including bitwise, logical, ternary, comparisons, and variable assignments), `$IFS` field splitting, and pathname globbing (`*`, `?`, `[...]`, `set -f`).
+2. Test redirections (`>`, `>|`, `>>`, `<`, `2>`, `2>>`, `2>&1`, `>&2`, `<<EOF`, `<<'EOF'`, `<<-EOF`), pipelines (`|`, `!`), short-circuit lists (`&&`, `||`, `;`), `if/elif/else/fi`, `case/in/esac`, `for`, `while`, `until`, `break [n]`, `continue [n]`, subshells `(...)`, brace groups `{ ...; }`, and recursive shell functions with `local` and `return`.
+3. Test all built-in commands (`:`, `true`, `false`, `echo`, `printf`, `cd`, `pwd`, `export`, `unset`, `readonly`, `shift`, `set -e/-u/-f/-x/-C/--`, `read`, `test`/`[`, `eval`, `exec`, `command -v`, `type`, `alias`, `umask`, `trap`, `exit`, `.`) in Pure Ridgun without `/bin/sh` delegation.
 
 ## Expected results (map to acceptance criteria)
-- AC1 → `sh -c 'X=hello; echo "$X world"'` prints `hello world` and exits with `0`.
-- AC2 → Conditional lists (`true && echo ok`, `false || echo fallback`), pipelines, and `if`/`for`/`while` loops execute according to POSIX/BSD `sh` semantics.
+- AC1 → All quoting, parameter expansions, real `$$` PID, command substitutions, arithmetic expressions, `$IFS` splitting, and globs evaluate to exact POSIX outputs.
+- AC2 → All control-flow constructs, pipelines, redirections, here-documents, functions, traps, options (`-e`, `-u`, `-f`), and built-ins execute in Pure Ridgun with exact POSIX/BSD semantics and exit codes.
 
 ## Not covered here (to avoid duplication)
 - `apply` and `make` are covered in `TS-PROC-001`.

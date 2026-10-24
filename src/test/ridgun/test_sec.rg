@@ -79,7 +79,47 @@ fn :: test doas e2e suite => ()
         _ = assert equals (read file "/tmp/ut_doas_q2.out") ("deny" + nl) "AC2 E2E binary: target/doas -C audit prints 'deny' when later rule denies"
         _ = shell exec "DOAS_CALLER=boogie DOAS_GROUPS=wheel ./target/doas -C /tmp/ut_doas_good.conf -u root /usr/bin/whoami > /tmp/ut_doas_q3.out"
         _ = assert equals (read file "/tmp/ut_doas_q3.out") ("permit" + nl) "AC2 E2E binary: target/doas -C audit prints 'permit' via :wheel"
-        _ = shell exec "rm -f /tmp/ut_doas_good.conf /tmp/ut_doas_bad.conf /tmp/ut_doas_c1.out /tmp/ut_doas_c2.out /tmp/ut_doas_q1.out /tmp/ut_doas_q2.out /tmp/ut_doas_q3.out"
+        bs = char from code 92
+        quoted_cfg = "permit nopass boogie as root cmd /bin/echo " + bs + nl + "  args \"hello world\" \"with spaces\"" + nl
+        q_rules = unwrap rules (parse doas config quoted_cfg)
+        q_dec_ok = evaluate doas rules q_rules for "boogie" in ["wheel"] as "root" running "/bin/echo" with ["hello world", "with spaces"]
+        _ = assert equals (format doas audit q_dec_ok) "permit nopass" "AC2: doas policy matches multi-word quoted args after backslash line continuation"
+        q_dec_split = evaluate doas rules q_rules for "boogie" in ["wheel"] as "root" running "/bin/echo" with ["hello", "world", "with spaces"]
+        _ = assert equals (format doas audit q_dec_split) "deny" "AC2: doas policy rejects split tokens when quoted token is required"
+        cont_cfg = "permit nopass boogie as root cmd /bin/echo " + bs + nl + "  args alpha_arg beta_arg" + nl
+        _ = write file "/tmp/ut_doas_quoted.conf" cont_cfg
+        rc_qc = shell exec "./target/doas -C /tmp/ut_doas_quoted.conf"
+        _ = assert int equals rc_qc 0 "AC1 E2E binary: target/doas -C accepts backslash line continuation"
+        _ = shell exec "DOAS_CALLER=boogie ./target/doas -C /tmp/ut_doas_quoted.conf -u root /bin/echo alpha_arg beta_arg > /tmp/ut_doas_q4.out"
+        _ = assert equals (read file "/tmp/ut_doas_q4.out") ("permit nopass" + nl) "AC2 E2E binary: target/doas -C matches args across backslash line continuation"
+        _ = shell exec "DOAS_CALLER=boogie ./target/doas -C /tmp/ut_doas_quoted.conf -u root /bin/echo alpha_arg wrong_arg > /tmp/ut_doas_q5.out"
+        _ = assert equals (read file "/tmp/ut_doas_q5.out") ("deny" + nl) "AC2 E2E binary: target/doas -C rejects mismatched args across line continuation"
+        rc_clear_l = shell exec "./target/doas -L"
+        _ = assert int equals rc_clear_l 0 "AC2 E2E binary: target/doas -L clears persisted token and exits 0"
+        _ = sys setenv "LD_PRELOAD" "/tmp/evil.so"
+        _ = sys setenv "LD_LIBRARY_PATH" "/tmp/evil_lib"
+        _ = sys setenv "SAFE_CUSTOM_VAR" "preserved_ok"
+        keep_rule = (dummy rule) with dr_action = ActPermit, dr_nopass = True, dr_keepenv = True, dr_ident = "boogie"
+        kept_env = build doas env keep_rule for "boogie" as "root"
+        _ = sys setenv "LD_PRELOAD" ""
+        _ = sys setenv "LD_LIBRARY_PATH" ""
+        _ = assert false (list contains str kept_env "LD_PRELOAD=/tmp/evil.so") "AC2 security (VUL-INJ-001): doas keepenv strips dangerous LD_PRELOAD"
+        _ = assert false (list contains str kept_env "LD_LIBRARY_PATH=/tmp/evil_lib") "AC2 security (VUL-INJ-001): doas keepenv strips dangerous LD_LIBRARY_PATH"
+        _ = assert true (list contains str kept_env "SAFE_CUSTOM_VAR=preserved_ok") "AC2: doas keepenv preserves safe caller environment variables"
+        pass_rule = (dummy rule) with dr_action = ActPermit, dr_nopass = False, dr_ident = "boogie"
+        ni_spec = (parse doas args ["-n", "-u", "root", "/bin/id"])
+        rc_ni = execute privileged pass_rule ni_spec "boogie"
+        _ = assert false (check eq rc_ni 0) "AC2 security: doas -n non-interactive fails when rule requires password"
+        int_spec = (parse doas args ["-u", "root", "/bin/id"])
+        _ = sys setenv "DOAS_PASS" "wrong_password"
+        _ = sys setenv "DOAS_AUTH_SHA256" "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        rc_wrong_pw = execute privileged pass_rule int_spec "boogie"
+        _ = assert false (check eq rc_wrong_pw 0) "AC2 security (VUL-AUTHN-001): doas rejects wrong password when nopass is False"
+        _ = sys setenv "DOAS_PASS" "abc"
+        _ = assert true (authenticate doas pass_rule int_spec "boogie") "AC2 security (VUL-AUTHN-001): doas accepts password matching SHA-256 verifier"
+        _ = sys setenv "DOAS_PASS" ""
+        _ = sys setenv "DOAS_AUTH_SHA256" ""
+        _ = shell exec "rm -f /tmp/ut_doas_good.conf /tmp/ut_doas_bad.conf /tmp/ut_doas_quoted.conf /tmp/ut_doas_c1.out /tmp/ut_doas_c2.out /tmp/ut_doas_q1.out /tmp/ut_doas_q2.out /tmp/ut_doas_q3.out /tmp/ut_doas_q4.out /tmp/ut_doas_q5.out"
         ()
 
 fn :: test sha256 suite => ()

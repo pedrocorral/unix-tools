@@ -11,6 +11,16 @@ fn :: resolve conf path String => String
       resolve conf path ""     =  "/etc/doas.conf"
       resolve conf path p      =  p
 
+fn :: split csv groups String Int Int String [String] => [String]
+      split csv groups s idx len cur acc =
+        | idx >= len                                                  = push csv group cur acc
+        | ((str char at s idx) == 44) or ((str char at s idx) == 58)  = split csv groups s (idx + 1) len "" (push csv group cur acc)
+        | otherwise                                                   = split csv groups s (idx + 1) len (cur + (str slice s idx (idx + 1))) acc
+
+fn :: push csv group String [String] => [String]
+      push csv group ""     acc      =  acc
+      push csv group cur    acc      =  acc :: [cur]
+
 fn :: handle parse result DoasParseResult  DoasSpec => ()
       handle parse result (DParseErr line_no msg) spec =
         _ = echo msg
@@ -21,37 +31,31 @@ fn :: handle parse result DoasParseResult  DoasSpec => ()
         | (str len (d_cmd spec)) == 0                                           = sys exit 1
         | otherwise                                                             = run live doas rules spec
 
-fn :: current caller user => String
-      current caller user =
-        env_u = sys getenv "DOAS_CALLER"
-        select caller user env_u
+fn :: select audit user String => String
+      select audit user ""     =  sys username (sys getuid)
+      select audit user env_u  =  env_u
 
-fn :: select caller user String => String
-      select caller user env_u  =
-        | (str len env_u) > 0 = env_u
-        | otherwise           = sys username (sys getuid)
+fn :: audit caller user => String
+      audit caller user =  select audit user (sys getenv "DOAS_CALLER")
 
-fn :: current caller groups String => [String]
-      current caller groups caller =
-        env_g = sys getenv "DOAS_GROUPS"
-        select caller groups env_g caller
+fn :: select audit groups String String => [String]
+      select audit groups ""     caller =  sys user groups caller
+      select audit groups env_g  _      =  split csv groups env_g 0 (str len env_g) "" []
 
-fn :: select caller groups String String => [String]
-      select caller groups env_g  caller =
-        | (str len env_g) > 0 = [env_g]
-        | otherwise           = sys user groups caller
+fn :: audit caller groups String => [String]
+      audit caller groups caller =  select audit groups (sys getenv "DOAS_GROUPS") caller
 
 fn :: run audit query [DoasRule] DoasSpec => ()
       run audit query rules      spec     =
-        caller = current caller user
-        groups = current caller groups caller
+        caller = audit caller user
+        groups = audit caller groups caller
         dec = evaluate doas rules rules for caller in groups as (d_target_user spec) running (d_cmd spec) with (d_cmd_args spec)
         echo (format doas audit dec)
 
 fn :: run live doas [DoasRule] DoasSpec => ()
       run live doas rules      spec     =
-        caller = current caller user
-        groups = current caller groups caller
+        caller = sys username (sys getuid)
+        groups = sys user groups caller
         dec = evaluate doas rules rules for caller in groups as (d_target_user spec) running (d_cmd spec) with (d_cmd_args spec)
         dispatch live decision dec spec caller
 
@@ -67,10 +71,19 @@ fn :: exit if fail Int => ()
       exit if fail 0   =  ()
       exit if fail rc  =  sys exit rc
 
+fn :: dispatch doas spec DoasSpec => ()
+      dispatch doas spec spec     =
+        dispatch doas clear (d_clear_persist spec) spec
+
+fn :: dispatch doas clear Bool  DoasSpec => ()
+      dispatch doas clear True  _        =  ()
+      dispatch doas clear False spec     =
+        raw_conf = read file (resolve conf path (d_check_conf spec))
+        parsed = parse doas config raw_conf
+        handle parse result parsed spec
+
 fn :: main => ()
       main =
         args = drop prog (cli args)
         spec = parse doas args args
-        raw_conf = read file (resolve conf path (d_check_conf spec))
-        parsed = parse doas config raw_conf
-        handle parse result parsed spec
+        dispatch doas spec spec

@@ -14,7 +14,7 @@ type FileKind = FReg | FDir | FSymLink | FFifo | FSock | FBlock | FChar
 
 type FileEntry = Entry String String FileKind Int Int Int String String Int String
 
-type LsSpec = l_one_per_line: Bool, l_multi_col: Bool, l_long: Bool, l_all: Bool, l_almost_all: Bool, l_classify: Bool, l_human: Bool, l_sort_size: Bool, l_sort_time: Bool, l_reverse: Bool, l_recursive: Bool, l_color: Bool, l_paths: [String]
+type LsSpec = l_one_per_line: Bool, l_multi_col: Bool, l_across: Bool, l_comma: Bool, l_long: Bool, l_dir_self: Bool, l_all: Bool, l_almost_all: Bool, l_unsorted: Bool, l_classify: Bool, l_slash_dir: Bool, l_nonprint_q: Bool, l_human: Bool, l_sort_size: Bool, l_sort_time: Bool, l_reverse: Bool, l_recursive: Bool, l_color: Bool, l_paths: [String]
 
 type FindExpr = ETrue | EName String | EIname String | EPath String | EType String | ESize Int Int | EMaxDepth Int | EMinDepth Int
 
@@ -257,19 +257,25 @@ op :: stat file entry String    named String => FileEntry
 -- ============================================================================
 
 fn :: default ls spec => LsSpec
-      default ls spec =  LsSpec False True False False False False False False False False False False []
+      default ls spec =  LsSpec False True False False False False False False False False False False False False False False False False []
 
 op :: parse ls args [String] => LsSpec
       parse ls args args     =  parse ls loop args (default ls spec) False
 
 fn :: apply ls flag Int LsSpec => LsSpec
       apply ls flag c   spec   =
-        | c == 49 = spec with l_one_per_line = True, l_multi_col = False, l_long = False
-        | c == 67 = spec with l_one_per_line = False, l_multi_col = True, l_long = False
-        | c == 108 = spec with l_one_per_line = False, l_multi_col = False, l_long = True
+        | c == 49 = spec with l_one_per_line = True, l_multi_col = False, l_across = False, l_comma = False, l_long = False
+        | c == 67 = spec with l_one_per_line = False, l_multi_col = True, l_across = False, l_comma = False, l_long = False
+        | c == 120 = spec with l_one_per_line = False, l_multi_col = False, l_across = True, l_comma = False, l_long = False
+        | c == 109 = spec with l_one_per_line = False, l_multi_col = False, l_across = False, l_comma = True, l_long = False
+        | c == 108 = spec with l_one_per_line = False, l_multi_col = False, l_across = False, l_comma = False, l_long = True
+        | c == 100 = spec with l_dir_self = True
         | c == 97 = spec with l_all = True
         | c == 65 = spec with l_almost_all = True
-        | c == 70 = spec with l_classify = True
+        | c == 102 = spec with l_all = True, l_unsorted = True
+        | c == 70 = spec with l_classify = True, l_slash_dir = False
+        | c == 112 = spec with l_slash_dir = True, l_classify = False
+        | c == 113 = spec with l_nonprint_q = True
         | c == 104 = spec with l_human = True
         | c == 83 = spec with l_sort_size = True, l_sort_time = False
         | c == 116 = spec with l_sort_size = False, l_sort_time = True
@@ -431,10 +437,27 @@ fn :: wrap ansi fg String String => String
         | (str len code) == 0 = name
         | otherwise = (char from code 27) + "[" + code + "m" + name + (char from code 27) + "[0m"
 
+fn :: sanitize nonprint loop String Int Int String => String
+      sanitize nonprint loop s idx len acc =
+        | idx >= len = acc
+        | ((str char at s idx) < 32) or ((str char at s idx) == 127) = sanitize nonprint loop s (idx + 1) len (acc + "?")
+        | otherwise = sanitize nonprint loop s (idx + 1) len (acc + (str slice s idx (idx + 1)))
+
+fn :: sanitize ls name String Bool  => String
+      sanitize ls name s      False =  s
+      sanitize ls name s      True  =  sanitize nonprint loop s 0 (str len s) ""
+
+fn :: select entry suffix FileEntry LsSpec => String
+      select entry suffix entry     spec   =
+        | l_classify spec                        = classify suffix entry
+        | (l_slash_dir spec) and (is dir kind (fe kind entry)) = "/"
+        | otherwise                              = ""
+
 fn :: format entry display name FileEntry LsSpec => String
       format entry display name entry spec =
-        colored = colorize name (fe name entry) entry (l_color spec)
-        suf = select classify suffix entry (l_classify spec)
+        clean_n = sanitize ls name (fe name entry) (l_nonprint_q spec)
+        colored = colorize name clean_n entry (l_color spec)
+        suf = select entry suffix entry spec
         colored + suf
 
 fn :: select classify suffix FileEntry Bool  => String
@@ -464,7 +487,9 @@ fn :: compare int desc Int Int String String => Int
 
 op :: sort entries [FileEntry] with LsSpec => [FileEntry]
       sort entries []          with spec   =  []
-      sort entries (x:xs)      with spec   =  insert sorted entry x (sort entries xs with spec) spec
+      sort entries (x:xs)      with spec   =
+        | l_unsorted spec = [x] :: xs
+        | otherwise       = insert sorted entry x (sort entries xs with spec) spec
 
 fn :: insert sorted entry FileEntry [FileEntry] LsSpec => [FileEntry]
       insert sorted entry item [] spec = [item]
@@ -546,7 +571,7 @@ fn :: render one per line [FileEntry] LsSpec [String] => [String]
 
 fn :: visible entry len FileEntry LsSpec => Int
       visible entry len entry     spec   =
-        (str len (fe name entry)) + (str len (select classify suffix entry (l_classify spec)))
+        (str len (fe name entry)) + (str len (select entry suffix entry spec))
 
 fn :: max visible len [FileEntry] LsSpec Int => Int
       max visible len [] spec best = best
@@ -562,6 +587,41 @@ fn :: render multi col [FileEntry] LsSpec => [String]
         num_cols = max int 1 (80 / col_w)
         num_rows = ((total + num_cols - 1) / num_cols)
         render mc rows entries spec total num_rows num_cols col_w 0 []
+
+fn :: render across col [FileEntry] LsSpec => [String]
+      render across col []          spec   =  []
+      render across col entries     spec   =
+        total = list len entries
+        max_w = max int 1 (max visible len entries spec 0)
+        col_w = max_w + 2
+        num_cols = max int 1 (80 / col_w)
+        num_rows = ((total + num_cols - 1) / num_cols)
+        render across rows entries spec total num_rows num_cols col_w 0 []
+
+fn :: render across rows [FileEntry] LsSpec Int Int Int Int Int [String] => [String]
+      render across rows entries spec total num_rows num_cols col_w r acc =
+        | r >= num_rows = acc
+        | otherwise     = render across rows entries spec total num_rows num_cols col_w (r + 1) (acc :: [render across row entries spec total num_cols col_w r 0 ""])
+
+fn :: render across row [FileEntry] LsSpec Int Int Int Int Int String => String
+      render across row entries spec total num_cols col_w r c acc =
+        | c >= num_cols                  = acc
+        | ((r * num_cols) + c) >= total  = acc
+        | otherwise                      =
+          idx = (r * num_cols) + c
+          ent = entry list nth entries idx
+          disp = format entry display name ent spec
+          vlen = visible entry len ent spec
+          next_idx = idx + 1
+          has_more = ((c + 1) < num_cols) and (next_idx < total)
+          padded = pad mc cell disp vlen col_w has_more
+          render across row entries spec total num_cols col_w r (c + 1) (acc + padded)
+
+fn :: render comma stream [FileEntry] LsSpec => [String]
+      render comma stream []          spec   =  []
+      render comma stream entries     spec   =
+        items = render one per line entries spec []
+        [join with items ", "]
 
 fn :: entry list nth [FileEntry] Int => FileEntry
       entry list nth (x:xs)      n   =
@@ -593,9 +653,11 @@ fn :: pad mc cell String Int Int Bool => String
 
 op :: format ls entries [FileEntry] with LsSpec => [String]
       format ls entries entries     with spec   =
-        | l_long spec = render long entries entries spec (max entry widths entries (l_human spec) 1 1 1 1) []
+        | l_long spec         = render long entries entries spec (max entry widths entries (l_human spec) 1 1 1 1) []
         | l_one_per_line spec = render one per line entries spec []
-        | otherwise = render multi col entries spec
+        | l_comma spec        = render comma stream entries spec
+        | l_across spec       = render across col entries spec
+        | otherwise           = render multi col entries spec
 
 fn :: collect subdirs [FileEntry] [String] => [String]
       collect subdirs []          acc      =  acc
@@ -638,8 +700,9 @@ fn :: run ls paths [String] LsSpec Bool [String] => [String]
 
 fn :: render ls target String FileEntry LsSpec Bool => [String]
       render ls target p ent spec show_header =
+        | l_dir_self spec           = format ls entries [ent] with spec
         | is dir kind (fe kind ent) = list single dir p spec show_header
-        | otherwise = format ls entries [ent] with spec
+        | otherwise                 = format ls entries [ent] with spec
 
 fn :: append ls section [String] [String] => [String]
       append ls section []       part     =  part

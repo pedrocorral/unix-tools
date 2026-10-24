@@ -10,9 +10,9 @@
 | FR-FS-002 | TS-FS-002 | src/main/ridgun/find/main.rg, src/main/ridgun/lib/fs_lib.rg | src/test/ridgun/test_fs.rg | ok |
 | FR-FS-003 | TS-FS-003 | src/main/ridgun/lib/fs_lib.rg, src/main/ridgun/mtree/main.rg | src/test/ridgun/test_fs.rg | ok |
 | FR-FS-004 | TS-FS-004 | src/main/ridgun/lib/fs_lib.rg, src/main/ridgun/mktemp/main.rg | src/test/ridgun/test_fs.rg | ok |
-| FR-PROC-001 | TS-PROC-001 | src/main/ridgun/apply/main.rg, src/main/ridgun/lib/proc_lib.rg, src/main/ridgun/make/main.rg | src/test/ridgun/test_proc.rg | ok |
-| FR-PROC-002 | TS-PROC-002 | src/main/ridgun/lib/proc_lib.rg, src/main/ridgun/sh/main.rg | src/test/ridgun/test_proc.rg | ok |
-| FR-PROC-003 | TS-PROC-003 | src/main/ridgun/lib/proc_lib.rg, src/main/ridgun/nc/main.rg, src/main/ridgun/timeout/main.rg | src/test/ridgun/test_proc.rg | ok |
+| FR-PROC-001 | TS-PROC-001 | src/main/ridgun/apply/main.rg, src/main/ridgun/lib/proc_lib.rg, src/main/ridgun/make/main.rg | src/test/ridgun/test_make.rg, src/test/ridgun/test_proc.rg | ok |
+| FR-PROC-002 | TS-PROC-002 | src/main/ridgun/lib/proc_lib.rg, src/main/ridgun/sh/main.rg | src/test/ridgun/test_proc.rg, src/test/ridgun/test_sh.rg | ok |
+| FR-PROC-003 | TS-PROC-003 | src/main/ridgun/lib/proc_lib.rg, src/main/ridgun/nc/main.rg, src/main/ridgun/timeout/main.rg | src/test/ridgun/test_nc_timeout.rg, src/test/ridgun/test_proc.rg | ok |
 | FR-SEC-001 | TS-SEC-002 | src/main/ridgun/doas/main.rg, src/main/ridgun/lib/sec_lib.rg | src/test/ridgun/test_sec.rg | ok |
 | FR-SEC-002 | TS-SEC-003 | src/main/ridgun/lib/sec_lib.rg, src/main/ridgun/sha256/main.rg | src/test/ridgun/test_sec.rg | ok |
 | NFR-OBS-001 | TS-OBS-001 | — | — | no code, spec not automated |

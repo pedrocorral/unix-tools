@@ -99,6 +99,12 @@ fn :: test fs e2e suite => ()
         _ = assert true (str starts with lh_out "-rwxr-xr-x") "E2E binary: target/ls -lh prints mode string -rwxr-xr-x"
         _ = shell exec "./target/ls -1F -- /tmp/ut_fs_tree/alpha.rg > /tmp/ut_ls_d.out"
         _ = assert equals (read file "/tmp/ut_ls_d.out") ("/tmp/ut_fs_tree/alpha.rg*" + nl) "E2E binary: target/ls -1F -- single file argument"
+        _ = shell exec "./target/ls -1dF /tmp/ut_fs_tree > /tmp/ut_ls_dir_d.out"
+        _ = assert equals (read file "/tmp/ut_ls_dir_d.out") ("/tmp/ut_fs_tree/" + nl) "AC1 E2E binary: target/ls -d lists directory entry itself without expanding contents"
+        _ = shell exec "./target/ls -1p /tmp/ut_fs_tree > /tmp/ut_ls_p.out"
+        _ = assert equals (read file "/tmp/ut_ls_p.out") ("alpha.rg" + nl + "empty_dir/" + nl + "link_alpha" + nl + "notes.txt" + nl + "sub/" + nl) "AC1 E2E binary: target/ls -p appends / only to directories (not * or @)"
+        _ = shell exec "./target/ls -m /tmp/ut_fs_tree > /tmp/ut_ls_m.out"
+        _ = assert equals (read file "/tmp/ut_ls_m.out") ("alpha.rg, empty_dir, link_alpha, notes.txt, sub" + nl) "AC2 E2E binary: target/ls -m formats comma-separated stream output"
         _ = shell exec "./target/find /tmp/ut_fs_tree -type f -name '*.rg' > /tmp/ut_find1.out"
         _ = assert equals (read file "/tmp/ut_find1.out") ("/tmp/ut_fs_tree/alpha.rg" + nl + "/tmp/ut_fs_tree/sub/beta.rg" + nl) "E2E binary: target/find -type f -name '*.rg'"
         _ = shell exec "./target/find /tmp/ut_fs_tree -maxdepth 1 -type f -name '*.rg' -exec basename {} ';' > /tmp/ut_find_exec.out"
@@ -140,7 +146,7 @@ fn :: test fs e2e suite => ()
         _ = shell exec "./target/mtree -f /tmp/ut_mtree.spec -p /tmp/ut_fs_tree -u > /tmp/ut_mtree_u.out || true"
         rc_mtree_v3 = shell exec "./target/mtree -f /tmp/ut_mtree.spec -p /tmp/ut_fs_tree > /tmp/ut_mtree_v3.out"
         _ = assert int equals rc_mtree_v3 0 "E2E binary: target/mtree -u heals missing directory and restores 0755 permissions"
-        _ = shell exec "rm -rf /tmp/ut_fs_tree /tmp/ut_mtree.spec /tmp/ut_mtree2.spec /tmp/ut_ls_def.out /tmp/ut_ls_cap_a.out /tmp/ut_ls_a.out /tmp/ut_ls_r.out /tmp/ut_ls_f.out /tmp/ut_ls_lh.out /tmp/ut_ls_d.out /tmp/ut_find1.out /tmp/ut_find_exec.out /tmp/ut_find_d1.out /tmp/ut_find_min2.out /tmp/ut_find_path.out /tmp/ut_find_emp.out /tmp/ut_mtree_v1.out /tmp/ut_mtree_v2.out /tmp/ut_mtree_u.out /tmp/ut_mtree_v3.out"
+        _ = shell exec "rm -rf /tmp/ut_fs_tree /tmp/ut_mtree.spec /tmp/ut_mtree2.spec /tmp/ut_ls_def.out /tmp/ut_ls_cap_a.out /tmp/ut_ls_a.out /tmp/ut_ls_r.out /tmp/ut_ls_f.out /tmp/ut_ls_lh.out /tmp/ut_ls_d.out /tmp/ut_ls_dir_d.out /tmp/ut_ls_p.out /tmp/ut_ls_m.out /tmp/ut_find1.out /tmp/ut_find_exec.out /tmp/ut_find_d1.out /tmp/ut_find_min2.out /tmp/ut_find_path.out /tmp/ut_find_emp.out /tmp/ut_mtree_v1.out /tmp/ut_mtree_v2.out /tmp/ut_mtree_u.out /tmp/ut_mtree_v3.out"
         ()
 
 fn :: test mktemp suite => ()
