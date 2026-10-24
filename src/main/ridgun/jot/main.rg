@@ -1,7 +1,6 @@
 -- jot/main.rg — BSD jot(1) sequential/repetitive data generator
 -- @implements FR-FILTER-001
 
-import posix
 import filter_lib
 
 fn :: drop prog [String]    => [String]

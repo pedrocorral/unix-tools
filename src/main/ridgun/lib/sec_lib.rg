@@ -135,8 +135,8 @@ fn :: dummy rule => DoasRule
 fn :: parse doas line tokens [String] [String] Int [DoasRule] => DoasParseResult
       parse doas line tokens [] rest line_no acc = parse doas lines rest (line_no + 1) acc
       parse doas line tokens (act_tok:more) rest line_no acc =
-        | act_tok == "permit" = continue doas line (parse rule options more ((dummy rule) with dr_action: ActPermit) line_no) rest line_no acc
-        | act_tok == "deny"   = continue doas line (parse rule options more ((dummy rule) with dr_action: ActDeny) line_no) rest line_no acc
+        | act_tok == "permit" = continue doas line (parse rule options more ((dummy rule) with dr_action = ActPermit) line_no) rest line_no acc
+        | act_tok == "deny"   = continue doas line (parse rule options more ((dummy rule) with dr_action = ActDeny) line_no) rest line_no acc
         | otherwise           = DParseErr line_no ("doas.conf:" + (int to str line_no) + ": syntax error: expected permit or deny")
 
 fn :: continue doas line (Bool, DoasRule, String) [String] Int [DoasRule] => DoasParseResult
@@ -148,62 +148,61 @@ fn :: is reserved kw String => Bool
       is reserved kw s      =
         (s == "as") or (s == "cmd") or (s == "args") or (s == "nopass") or (s == "nolog") or (s == "persist") or (s == "keepenv") or (s == "setenv") or (s == "\{") or (s == "\}")
 
-fn :: parse rule options [String] DoasRule Int => (Bool, DoasRule, String)
+fn :: parse rule options [String] DoasRule Int => Bool DoasRule String
       parse rule options [] _ line_no =
         (False, (dummy rule), "doas.conf:" + (int to str line_no) + ": syntax error: missing identity")
       parse rule options (t:rest) rule line_no =
-        | t == "nopass"  = parse rule options rest (rule with dr_nopass: True) line_no
-        | t == "nolog"   = parse rule options rest (rule with dr_nolog: True) line_no
-        | t == "persist" = parse rule options rest (rule with dr_persist: True) line_no
-        | t == "keepenv" = parse rule options rest (rule with dr_keepenv: True) line_no
+        | t == "nopass"  = parse rule options rest (rule with dr_nopass = True) line_no
+        | t == "nolog"   = parse rule options rest (rule with dr_nolog = True) line_no
+        | t == "persist" = parse rule options rest (rule with dr_persist = True) line_no
+        | t == "keepenv" = parse rule options rest (rule with dr_keepenv = True) line_no
         | t == "setenv"  = parse rule setenv rest rule line_no
         | is reserved kw t = (False, (dummy rule), "doas.conf:" + (int to str line_no) + ": syntax error: unexpected keyword '" + t + "'")
-        | otherwise      = parse rule after ident rest (rule with dr_ident: t) line_no
+        | otherwise      = parse rule after ident rest (rule with dr_ident = t) line_no
 
-fn :: parse rule setenv [String] DoasRule Int => (Bool, DoasRule, String)
+fn :: parse rule setenv [String] DoasRule Int => Bool DoasRule String
       parse rule setenv [] _ line_no =
         (False, (dummy rule), "doas.conf:" + (int to str line_no) + ": syntax error: expected '\{' after setenv")
       parse rule setenv (t:rest) rule line_no =
         | t == "\{" = collect setenv block rest rule line_no
         | otherwise = (False, (dummy rule), "doas.conf:" + (int to str line_no) + ": syntax error: expected '\{' after setenv")
 
-fn :: collect setenv block [String] DoasRule Int => (Bool, DoasRule, String)
+fn :: collect setenv block [String] DoasRule Int => Bool DoasRule String
       collect setenv block [] _ line_no =
         (False, (dummy rule), "doas.conf:" + (int to str line_no) + ": syntax error: unclosed '\{' in setenv")
       collect setenv block (t:rest) rule line_no =
         | t == "\}" = parse rule options rest rule line_no
-        | otherwise = collect setenv block rest (rule with dr_setenv: (dr_setenv rule) :: [t]) line_no
+        | otherwise = collect setenv block rest (rule with dr_setenv = ((dr_setenv rule) :: [t])) line_no
 
-fn :: parse rule after ident [String] DoasRule Int => (Bool, DoasRule, String)
+fn :: parse rule after ident [String] DoasRule Int => Bool DoasRule String
       parse rule after ident [] rule _ = (True, rule, "")
       parse rule after ident (t:rest) rule line_no =
         | t == "as"  = parse rule as rest rule line_no
         | t == "cmd" = parse rule cmd rest rule line_no
         | otherwise  = (False, (dummy rule), "doas.conf:" + (int to str line_no) + ": syntax error: unexpected token '" + t + "'")
 
-fn :: parse rule as [String] DoasRule Int => (Bool, DoasRule, String)
+fn :: parse rule as [String] DoasRule Int => Bool DoasRule String
       parse rule as [] _ line_no =
         (False, (dummy rule), "doas.conf:" + (int to str line_no) + ": syntax error: missing target after 'as'")
       parse rule as (target:rest) rule line_no =
         | is reserved kw target = (False, (dummy rule), "doas.conf:" + (int to str line_no) + ": syntax error: invalid target after 'as'")
-        | otherwise             = parse rule after as rest (rule with dr_target: target) line_no
+        | otherwise             = parse rule after as rest (rule with dr_target = target) line_no
 
-fn :: parse rule after as [String] DoasRule Int => (Bool, DoasRule, String)
+fn :: parse rule after as [String] DoasRule Int => Bool DoasRule String
       parse rule after as [] rule _ = (True, rule, "")
       parse rule after as (t:rest) rule line_no =
         | t == "cmd" = parse rule cmd rest rule line_no
         | otherwise  = (False, (dummy rule), "doas.conf:" + (int to str line_no) + ": syntax error: unexpected token '" + t + "'")
 
-fn :: parse rule cmd [String] DoasRule Int => (Bool, DoasRule, String)
+fn :: parse rule cmd [String] DoasRule Int => Bool DoasRule String
       parse rule cmd [] _ line_no =
         (False, (dummy rule), "doas.conf:" + (int to str line_no) + ": syntax error: missing command after 'cmd'")
-      parse rule cmd (cmd_name:rest) rule line_no =
-        parse rule cmd args rest (rule with dr_has_cmd: True, dr_cmd: cmd_name) line_no
+      parse rule cmd (cmd_name:rest) rule line_no = parse rule cmd args rest (rule with dr_has_cmd = True, dr_cmd = cmd_name) line_no
 
-fn :: parse rule cmd args [String] DoasRule Int => (Bool, DoasRule, String)
+fn :: parse rule cmd args [String] DoasRule Int => Bool DoasRule String
       parse rule cmd args [] rule _ = (True, rule, "")
       parse rule cmd args (t:rest) rule line_no =
-        | t == "args" = (True, rule with dr_has_args: True, dr_args: rest, "")
+        | t == "args" = (True, rule with dr_has_args = True, dr_args = rest, "")
         | otherwise   = (False, (dummy rule), "doas.conf:" + (int to str line_no) + ": syntax error: expected 'args' after command")
 
 -- ============================================================================
@@ -259,7 +258,7 @@ op :: parse doas args [String] => DoasSpec
 fn :: parse doas cli [String]   DoasSpec => DoasSpec
       parse doas cli []         spec     =  spec
       parse doas cli (arg:rest) spec     =
-        | arg == "-n" = parse doas cli rest (spec with d_non_interactive: True)
+        | arg == "-n" = parse doas cli rest (spec with d_non_interactive = True)
         | arg == "-C" = parse doas flag c rest spec
         | arg == "-u" = parse doas flag u rest spec
         | arg == "--" = assign doas cmd rest spec
@@ -267,18 +266,15 @@ fn :: parse doas cli [String]   DoasSpec => DoasSpec
 
 fn :: parse doas flag c [String] DoasSpec => DoasSpec
       parse doas flag c [] spec = spec
-      parse doas flag c (conf:rest) spec =
-        parse doas cli rest (spec with d_check_conf: conf)
+      parse doas flag c (conf:rest) spec = parse doas cli rest (spec with d_check_conf = conf)
 
 fn :: parse doas flag u [String] DoasSpec => DoasSpec
       parse doas flag u [] spec = spec
-      parse doas flag u (u:rest) spec =
-        parse doas cli rest (spec with d_target_user: u)
+      parse doas flag u (u:rest) spec = parse doas cli rest (spec with d_target_user = u)
 
 fn :: assign doas cmd [String]   DoasSpec => DoasSpec
       assign doas cmd []         spec     =  spec
-      assign doas cmd (cmd:args) spec     =
-        spec with d_cmd: cmd, d_cmd_args: args
+      assign doas cmd (cmd:args) spec     =  spec with d_cmd = cmd, d_cmd_args = args
 
 op :: build doas env DoasRule for String      as String      => [String]
       build doas env rule     for caller_user as target_user =
@@ -349,100 +345,100 @@ fn :: switch if valid ids Int Int => Int
 -- 5. BSD sha256(1) Cryptographic Digest, HMAC-SHA256 & Argon2id (FR-SEC-002)
 -- ============================================================================
 
-fn :: default_sha256_spec => Sha256Spec
-      default_sha256_spec =  Sha256Spec False False False "" "" "" "" []
+fn :: default sha256 spec => Sha256Spec
+      default sha256 spec =  Sha256Spec False False False "" "" "" "" []
 
-fn :: parse_sha256_loop [String]      Sha256Spec => Sha256Spec
-      parse_sha256_loop []            spec       =  spec
-      parse_sha256_loop ("-q":rest)   spec       =  parse_sha256_loop rest (spec with sh_quiet: True)
-      parse_sha256_loop ("-r":rest)   spec       =  parse_sha256_loop rest (spec with sh_reverse: True)
-      parse_sha256_loop ("-qr":rest)  spec       =  parse_sha256_loop rest (spec with sh_quiet: True, sh_reverse: True)
-      parse_sha256_loop ("-rq":rest)  spec       =  parse_sha256_loop rest (spec with sh_quiet: True, sh_reverse: True)
-      parse_sha256_loop ("-s":s:rest) spec       =  parse_sha256_loop rest (spec with sh_has_str: True, sh_str: s)
-      parse_sha256_loop ("-k":k:rest) spec       =  parse_sha256_loop rest (spec with sh_key: k)
-      parse_sha256_loop ("--argon2id":s:rest) spec = parse_sha256_loop rest (spec with sh_argon_salt: s)
-      parse_sha256_loop ("--verify":p:rest) spec =  parse_sha256_loop rest (spec with sh_verify_phc: p)
-      parse_sha256_loop (f:rest)      spec       =  parse_sha256_loop rest (spec with sh_files: (sh_files spec) :: [f])
+fn :: parse sha256 loop [String]      Sha256Spec => Sha256Spec
+      parse sha256 loop []            spec       =  spec
+      parse sha256 loop ("-q":rest)   spec       =  parse sha256 loop rest (spec with sh_quiet = True)
+      parse sha256 loop ("-r":rest)   spec       =  parse sha256 loop rest (spec with sh_reverse = True)
+      parse sha256 loop ("-qr":rest)  spec       =  parse sha256 loop rest (spec with sh_quiet = True, sh_reverse = True)
+      parse sha256 loop ("-rq":rest)  spec       =  parse sha256 loop rest (spec with sh_quiet = True, sh_reverse = True)
+      parse sha256 loop ("-s":s:rest) spec       =  parse sha256 loop rest (spec with sh_has_str = True, sh_str = s)
+      parse sha256 loop ("-k":k:rest) spec       =  parse sha256 loop rest (spec with sh_key = k)
+      parse sha256 loop ("--argon2id":s:rest) spec = parse sha256 loop rest (spec with sh_argon_salt = s)
+      parse sha256 loop ("--verify":p:rest) spec =  parse sha256 loop rest (spec with sh_verify_phc = p)
+      parse sha256 loop (f:rest)      spec       =  parse sha256 loop rest (spec with sh_files = ((sh_files spec) :: [f]))
 
 op :: parse sha256 args [String] => Sha256Spec
-      parse sha256 args args     =  parse_sha256_loop args default_sha256_spec
+      parse sha256 args args     =  parse sha256 loop args (default sha256 spec)
 
-fn :: compute_digest_for Sha256Spec String => String
-      compute_digest_for spec       data   =
+fn :: compute digest for Sha256Spec String => String
+      compute digest for spec       data   =
         | (str len (sh_argon_salt spec)) > 0 = argon2id hash data (sh_argon_salt spec) 64 2 1
         | (str len (sh_key spec)) > 0        = bytes to hex str (hmac sha256 (sh_key spec) data)
         | otherwise                          = sha256 hex data
 
-fn :: algo_label Sha256Spec => String
-      algo_label spec       =
+fn :: algo label Sha256Spec => String
+      algo label spec       =
         | (str len (sh_key spec)) > 0 = "HMAC-SHA256"
         | otherwise                   = "SHA256"
 
-fn :: format_sha256_entry Sha256Spec String String Bool   => String
-      format_sha256_entry spec       label  digest is_str =
+fn :: format sha256 entry Sha256Spec String String Bool => String
+      format sha256 entry spec label digest is_str =
         | sh_quiet spec                    = digest
         | (sh_reverse spec) and is_str     = digest + " \"" + label + "\""
         | sh_reverse spec                  = digest + "  " + label
-        | is_str                           = (algo_label spec) + " (\"" + label + "\") = " + digest
-        | otherwise                        = (algo_label spec) + " (" + label + ") = " + digest
+        | is_str                           = (algo label spec) + " (\"" + label + "\") = " + digest
+        | otherwise                        = (algo label spec) + " (" + label + ") = " + digest
 
-fn :: file_readable_check String => Bool
-      file_readable_check path   =
+fn :: file readable check String => Bool
+      file readable check path   =
         fd = posix open path (o rdonly) 0
-        close_if_valid_fd fd
+        close if valid fd fd
 
-fn :: close_if_valid_fd Int => Bool
-      close_if_valid_fd fd  =
+fn :: close if valid fd Int => Bool
+      close if valid fd fd  =
         | fd < 0    = False
         | otherwise =
           _ = posix close fd
           True
 
-fn :: eval_one_sha256_file Sha256Spec String => (Int, String)
-      eval_one_sha256_file spec       f      =
-        | not (file_readable_check f) = (1, "sha256: " + f + ": No such file or directory")
+fn :: eval one sha256 file Sha256Spec String => Int String
+      eval one sha256 file spec f =
+        | not (file readable check f) = (1, "sha256: " + f + ": No such file or directory")
         | otherwise                   =
           data = read file f
-          dig = compute_digest_for spec data
-          (0, format_sha256_entry spec f dig False)
+          dig = compute digest for spec data
+          (0, format sha256 entry spec f dig False)
 
-fn :: merge_sha256_rc Int Int => Int
-      merge_sha256_rc a   b   =
+fn :: merge sha256 rc Int Int => Int
+      merge sha256 rc a   b   =
         | a != 0    = a
         | otherwise = b
 
-fn :: eval_sha256_files Sha256Spec [String] Int [String] => (Int, [String])
-      eval_sha256_files _          []       rc  acc      =  (rc, acc)
-      eval_sha256_files spec       (f:rest) rc  acc      =
-        one = eval_one_sha256_file spec f
-        eval_sha256_files spec rest (merge_sha256_rc rc (fst one)) (acc :: [snd one])
+fn :: eval sha256 files Sha256Spec [String] Int [String] => Int [String]
+      eval sha256 files _ [] rc acc = (rc, acc)
+      eval sha256 files spec (f:rest) rc acc =
+        one = eval one sha256 file spec f
+        eval sha256 files spec rest (merge sha256 rc rc (fst one)) (acc :: [snd one])
 
-fn :: verify_sha256_phc Sha256Spec String     => (Int, String)
-      verify_sha256_phc spec       stdin_data =
-        | argon2id verify (select_sha256_input spec stdin_data) (sh_verify_phc spec) = (0, "OK")
+fn :: verify sha256 phc Sha256Spec String     => Int String
+      verify sha256 phc spec       stdin_data =
+        | argon2id verify (select sha256 input spec stdin_data) (sh_verify_phc spec) = (0, "OK")
         | otherwise                                                                  = (1, "FAILED")
 
-fn :: finish_sha256_files (Int, [String]) => (Int, String)
-      finish_sha256_files (rc, lines)     =
-        (rc, join_sec_lines lines (char from code 10))
+fn :: finish sha256 files (Int, [String]) => Int String
+      finish sha256 files (rc, lines)     =
+        (rc, join sec lines lines (char from code 10))
 
-op :: evaluate sha256 Sha256Spec with String     => (Int, String)
+op :: evaluate sha256 Sha256Spec with String     => Int String
       evaluate sha256 spec       with stdin_data =
-        | (str len (sh_verify_phc spec)) > 0     = verify_sha256_phc spec stdin_data
-        | sh_has_str spec                        = (0, format_sha256_entry spec (sh_str spec) (compute_digest_for spec (sh_str spec)) True)
-        | (sec_str_list_len (sh_files spec)) > 0 = finish_sha256_files (eval_sha256_files spec (sh_files spec) 0 [])
-        | otherwise                              = (0, compute_digest_for spec stdin_data)
+        | (str len (sh_verify_phc spec)) > 0     = verify sha256 phc spec stdin_data
+        | sh_has_str spec                        = (0, format sha256 entry spec (sh_str spec) (compute digest for spec (sh_str spec)) True)
+        | (sec str list len (sh_files spec)) > 0 = finish sha256 files (eval sha256 files spec (sh_files spec) 0 [])
+        | otherwise                              = (0, compute digest for spec stdin_data)
 
-fn :: select_sha256_input Sha256Spec String     => String
-      select_sha256_input spec       stdin_data =
+fn :: select sha256 input Sha256Spec String     => String
+      select sha256 input spec       stdin_data =
         | sh_has_str spec = sh_str spec
         | otherwise       = stdin_data
 
-fn :: sec_str_list_len [String] => Int
-      sec_str_list_len []       =  0
-      sec_str_list_len (_:rest) =  1 + (sec_str_list_len rest)
+fn :: sec str list len [String] => Int
+      sec str list len []       =  0
+      sec str list len (_:rest) =  1 + (sec str list len rest)
 
-fn :: join_sec_lines [String] String => String
-      join_sec_lines []       _      =  ""
-      join_sec_lines (x:[])   _      =  x
-      join_sec_lines (x:xs)   sep    =  x + sep + (join_sec_lines xs sep)
+fn :: join sec lines [String] String => String
+      join sec lines []       _      =  ""
+      join sec lines (x:[])   _      =  x
+      join sec lines (x:xs)   sep    =  x + sep + (join sec lines xs sep)

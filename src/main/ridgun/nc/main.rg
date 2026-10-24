@@ -1,8 +1,6 @@
 -- nc/main.rg — BSD nc(1) TCP/Unix socket client, listener & port probe in Pure Ridgun
 -- @implements FR-PROC-003
 
-import io
-import socket
 import proc_lib
 
 fn :: drop prog [String] => [String]

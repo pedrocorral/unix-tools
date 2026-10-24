@@ -1,7 +1,6 @@
 -- vis/main.rg — BSD vis(1) visual character encoder
 -- @implements FR-FILTER-002
 
-import posix
 import filter_lib
 
 fn :: drop prog [String]    => [String]

@@ -1,8 +1,6 @@
 -- sh/main.rg — BSD sh(1) Almquist-style command interpreter in Pure Ridgun
 -- @implements FR-PROC-002
 
-import io
-import socket
 import proc_lib
 
 fn :: drop prog [String]    => [String]
@@ -17,7 +15,7 @@ fn :: read sh stdin loop String => String
       read sh stdin loop acc    =
         read sh stdin chunk acc (posix read 0 65536)
 
-fn :: extract sh invocation [String]           => (String, [String])
+fn :: extract sh invocation [String]           => String [String]
       extract sh invocation []                 =  (read sh stdin loop "", [])
       extract sh invocation ("-c":[])          =  ("", [])
       extract sh invocation ("-c":cmd_str:rest) = (cmd_str, rest)

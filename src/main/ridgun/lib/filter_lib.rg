@@ -86,501 +86,500 @@ fn :: max int Int Int => Int
         | a >= b    = a
         | otherwise = b
 
-fn :: is_digits_only String => Bool
-      is_digits_only s      =
-        | (str_len s) == 0 = False
-        | otherwise = is_digits_loop s 0 (str_len s)
+fn :: is digits only String => Bool
+      is digits only s      =
+        | (str len s) == 0 = False
+        | otherwise = is digits loop s 0 (str len s)
 
-fn :: is_digits_loop String Int Int => Bool
-      is_digits_loop s      idx len =
+fn :: is digits loop String Int Int => Bool
+      is digits loop s idx len =
         | idx >= len = True
-        | ((str_char_at s idx) >= 48) and ((str_char_at s idx) <= 57) = is_digits_loop s (idx + 1) len
+        | ((str char at s idx) >= 48) and ((str char at s idx) <= 57) = is digits loop s (idx + 1) len
         | otherwise = False
 
-fn :: parse_signed_int String => Int
-      parse_signed_int s      =
-        | (str_len s) == 0 = 0
-        | ((str_char_at s 0) == 45) and ((str_len s) > 1) = 0 - (str_to_int (str_slice s 1 (str_len s)))
-        | ((str_char_at s 0) == 43) and ((str_len s) > 1) = str_to_int (str_slice s 1 (str_len s))
-        | otherwise = str_to_int s
+fn :: parse signed int String => Int
+      parse signed int s      =
+        | (str len s) == 0 = 0
+        | ((str char at s 0) == 45) and ((str len s) > 1) = 0 - (str to int (str slice s 1 (str len s)))
+        | ((str char at s 0) == 43) and ((str len s) > 1) = str to int (str slice s 1 (str len s))
+        | otherwise = str to int s
 
-fn :: is_signed_int_str String => Bool
-      is_signed_int_str s      =
-        | (str_len s) == 0 = False
-        | ((str_char_at s 0) == 45) and ((str_len s) > 1) = is_digits_only (str_slice s 1 (str_len s))
-        | ((str_char_at s 0) == 43) and ((str_len s) > 1) = is_digits_only (str_slice s 1 (str_len s))
-        | otherwise = is_digits_only s
+fn :: is signed int str String => Bool
+      is signed int str s      =
+        | (str len s) == 0 = False
+        | ((str char at s 0) == 45) and ((str len s) > 1) = is digits only (str slice s 1 (str len s))
+        | ((str char at s 0) == 43) and ((str len s) > 1) = is digits only (str slice s 1 (str len s))
+        | otherwise = is digits only s
 
-fn :: find_char_idx String Int    Int Int => Int
-      find_char_idx s      target idx len =
+fn :: find char idx String Int Int Int => Int
+      find char idx s target idx len =
         | idx >= len = 0 - 1
-        | (str_char_at s idx) == target = idx
-        | otherwise = find_char_idx s target (idx + 1) len
+        | (str char at s idx) == target = idx
+        | otherwise = find char idx s target (idx + 1) len
 
-fn :: is_numeric_arg String => Bool
-      is_numeric_arg s      =
-        | is_signed_int_str s = True
-        | otherwise = is_decimal_str s
+fn :: is numeric arg String => Bool
+      is numeric arg s      =
+        | is signed int str s = True
+        | otherwise = is decimal str s
 
-fn :: is_decimal_str String => Bool
-      is_decimal_str s      =
-        dot_idx = find_char_idx s 46 0 (str_len s)
-        check_decimal_parts s dot_idx
+fn :: is decimal str String => Bool
+      is decimal str s      =
+        dot_idx = find char idx s 46 0 (str len s)
+        check decimal parts s dot_idx
 
-fn :: check_decimal_parts String Int     => Bool
-      check_decimal_parts s      dot_idx =
+fn :: check decimal parts String Int     => Bool
+      check decimal parts s      dot_idx =
         | dot_idx <= 0 = False
-        | (dot_idx + 1) >= (str_len s) = False
-        | otherwise = (is_signed_int_str (str_slice s 0 dot_idx)) and (is_digits_only (str_slice s (dot_idx + 1) (str_len s)))
+        | (dot_idx + 1) >= (str len s) = False
+        | otherwise = (is signed int str (str slice s 0 dot_idx)) and (is digits only (str slice s (dot_idx + 1) (str len s)))
 
-fn :: decimal_places String => Int
-      decimal_places s      =
-        dot_idx = find_char_idx s 46 0 (str_len s)
-        calc_decimal_places s dot_idx
+fn :: decimal places String => Int
+      decimal places s      =
+        dot_idx = find char idx s 46 0 (str len s)
+        calc decimal places s dot_idx
 
-fn :: calc_decimal_places String Int     => Int
-      calc_decimal_places s      dot_idx =
+fn :: calc decimal places String Int     => Int
+      calc decimal places s      dot_idx =
         | dot_idx < 0 = 0
-        | otherwise = (str_len s) - dot_idx - 1
+        | otherwise = (str len s) - dot_idx - 1
 
-fn :: parse_scaled_int String Int  => Int
-      parse_scaled_int s      prec =
-        | prec <= 0 = parse_signed_int s
-        | otherwise = parse_scaled_dot s prec (find_char_idx s 46 0 (str_len s))
+fn :: parse scaled int String Int  => Int
+      parse scaled int s      prec =
+        | prec <= 0 = parse signed int s
+        | otherwise = parse scaled dot s prec (find char idx s 46 0 (str len s))
 
-fn :: parse_scaled_dot String Int  Int     => Int
-      parse_scaled_dot s      prec dot_idx =
-        | dot_idx < 0 = (parse_signed_int s) * (pow10 prec)
-        | otherwise = combine_scaled_parts (str_slice s 0 dot_idx) (str_slice s (dot_idx + 1) (str_len s)) prec
+fn :: parse scaled dot String Int Int => Int
+      parse scaled dot s prec dot_idx =
+        | dot_idx < 0 = (parse signed int s) * (pow10 prec)
+        | otherwise = combine scaled parts (str slice s 0 dot_idx) (str slice s (dot_idx + 1) (str len s)) prec
 
-fn :: combine_scaled_parts String   String    Int  => Int
-      combine_scaled_parts int_part frac_part prec =
-        is_neg = ((str_len int_part) > 0) and ((str_char_at int_part 0) == 45)
-        abs_i = abs_int (parse_signed_int int_part)
-        padded_frac = pad_or_trunc_frac frac_part prec
-        frac_val = str_to_int padded_frac
+fn :: combine scaled parts String String Int => Int
+      combine scaled parts int_part frac_part prec =
+        is_neg = ((str len int_part) > 0) and ((str char at int_part 0) == 45)
+        abs_i = abs int (parse signed int int_part)
+        padded_frac = pad or trunc frac frac_part prec
+        frac_val = str to int padded_frac
         mag = (abs_i * (pow10 prec)) + frac_val
-        apply_sign is_neg mag
+        apply sign is_neg mag
 
-fn :: apply_sign Bool  Int => Int
-      apply_sign True  mag =  0 - mag
-      apply_sign False mag =  mag
+fn :: apply sign Bool  Int => Int
+      apply sign True  mag =  0 - mag
+      apply sign False mag =  mag
 
-fn :: pad_or_trunc_frac String Int  => String
-      pad_or_trunc_frac frac   prec =
-        | (str_len frac) == prec = frac
-        | (str_len frac) > prec = str_slice frac 0 prec
-        | otherwise = frac + (repeat_str "0" (prec - (str_len frac)))
+fn :: pad or trunc frac String Int => String
+      pad or trunc frac frac prec =
+        | (str len frac) == prec = frac
+        | (str len frac) > prec = str slice frac 0 prec
+        | otherwise = frac + (repeat str "0" (prec - (str len frac)))
 
-fn :: format_scaled_int Int Int  => String
-      format_scaled_int val prec =
-        | prec <= 0 = int_to_str val
-        | val < 0 = "-" + (format_scaled_pos (0 - val) prec)
-        | otherwise = format_scaled_pos val prec
+fn :: format scaled int Int Int  => String
+      format scaled int val prec =
+        | prec <= 0 = int to str val
+        | val < 0 = "-" + (format scaled pos (0 - val) prec)
+        | otherwise = format scaled pos val prec
 
-fn :: format_scaled_pos Int Int  => String
-      format_scaled_pos mag prec =
+fn :: format scaled pos Int Int  => String
+      format scaled pos mag prec =
         scale = pow10 prec
         int_part = mag / scale
         frac_part = mag % scale
-        (int_to_str int_part) + "." + (pad_left_char (int_to_str frac_part) prec "0")
+        (int to str int_part) + "." + (pad left char (int to str frac_part) prec "0")
 
-fn :: is_ws_code Int => Bool
-      is_ws_code c   =
+fn :: is ws code Int => Bool
+      is ws code c   =
         | c == 32 = True
         | c == 9 = True
         | c == 10 = True
         | c == 13 = True
         | otherwise = False
 
-fn :: split_ws_loop String Int Int String [String] => [String]
-      split_ws_loop s idx len cur acc =
-        | idx >= len = finalize_token cur acc
-        | is_ws_code (str_char_at s idx) = split_ws_after_space s (idx + 1) len cur acc
-        | otherwise = split_ws_loop s (idx + 1) len (cur + (str_slice s idx (idx + 1))) acc
+fn :: split ws loop String Int Int String [String] => [String]
+      split ws loop s idx len cur acc =
+        | idx >= len = finalize token cur acc
+        | is ws code (str char at s idx) = split ws after space s (idx + 1) len cur acc
+        | otherwise = split ws loop s (idx + 1) len (cur + (str slice s idx (idx + 1))) acc
 
-fn :: split_ws_after_space String Int Int String [String] => [String]
-      split_ws_after_space s next_idx len cur acc =
-        | (str_len cur) == 0 = split_ws_loop s next_idx len "" acc
-        | otherwise = split_ws_loop s next_idx len "" (acc :: [cur])
+fn :: split ws after space String Int Int String [String] => [String]
+      split ws after space s next_idx len cur acc =
+        | (str len cur) == 0 = split ws loop s next_idx len "" acc
+        | otherwise = split ws loop s next_idx len "" (acc :: [cur])
 
-fn :: finalize_token String [String] => [String]
-      finalize_token cur    acc      =
-        | (str_len cur) == 0 = acc
+fn :: finalize token String [String] => [String]
+      finalize token cur    acc      =
+        | (str len cur) == 0 = acc
         | otherwise = acc :: [cur]
 
 op :: split whitespace String => [String]
-      split whitespace s      =  split_ws_loop s 0 (str_len s) "" []
+      split whitespace s      =  split ws loop s 0 (str len s) "" []
 
-fn :: split_char_loop String Int Int Int String [String] => [String]
-      split_char_loop s idx len delim cur acc =
-        | idx >= len = finalize_token cur acc
-        | (str_char_at s idx) == delim = split_ws_after_delim s (idx + 1) len delim cur acc
-        | is_ws_code (str_char_at s idx) and (delim != 10) and ((str_char_at s idx) == 10) = split_ws_after_delim s (idx + 1) len delim cur acc
-        | otherwise = split_char_loop s (idx + 1) len delim (cur + (str_slice s idx (idx + 1))) acc
+fn :: split char loop String Int Int Int String [String] => [String]
+      split char loop s idx len delim cur acc =
+        | idx >= len = finalize token cur acc
+        | (str char at s idx) == delim = split ws after delim s (idx + 1) len delim cur acc
+        | is ws code (str char at s idx) and (delim != 10) and ((str char at s idx) == 10) = split ws after delim s (idx + 1) len delim cur acc
+        | otherwise = split char loop s (idx + 1) len delim (cur + (str slice s idx (idx + 1))) acc
 
-fn :: split_ws_after_delim String Int Int Int String [String] => [String]
-      split_ws_after_delim s next_idx len delim cur acc =
-        | (str_len cur) == 0 = split_char_loop s next_idx len delim "" acc
-        | otherwise = split_char_loop s next_idx len delim "" (acc :: [cur])
+fn :: split ws after delim String Int Int Int String [String] => [String]
+      split ws after delim s next_idx len delim cur acc =
+        | (str len cur) == 0 = split char loop s next_idx len delim "" acc
+        | otherwise = split char loop s next_idx len delim "" (acc :: [cur])
 
-fn :: split_lines_delim String Int Int Int String [String] => [String]
-      split_lines_delim s idx len term_code cur acc =
-        | idx >= len = finalize_line cur acc
-        | (str_char_at s idx) == term_code = split_lines_delim s (idx + 1) len term_code "" (acc :: [cur])
-        | (str_char_at s idx) == 13 = split_lines_delim s (idx + 1) len term_code cur acc
-        | (term_code != 10) and ((str_char_at s idx) == 10) = split_lines_delim s (idx + 1) len term_code cur acc
-        | otherwise = split_lines_delim s (idx + 1) len term_code (cur + (str_slice s idx (idx + 1))) acc
+fn :: split lines delim String Int Int Int String [String] => [String]
+      split lines delim s idx len term_code cur acc =
+        | idx >= len = finalize line cur acc
+        | (str char at s idx) == term_code = split lines delim s (idx + 1) len term_code "" (acc :: [cur])
+        | (str char at s idx) == 13 = split lines delim s (idx + 1) len term_code cur acc
+        | (term_code != 10) and ((str char at s idx) == 10) = split lines delim s (idx + 1) len term_code cur acc
+        | otherwise = split lines delim s (idx + 1) len term_code (cur + (str slice s idx (idx + 1))) acc
 
-fn :: finalize_line String [String] => [String]
-      finalize_line cur    acc      =
-        | (str_len cur) == 0 = acc
+fn :: finalize line String [String] => [String]
+      finalize line cur    acc      =
+        | (str len cur) == 0 = acc
         | otherwise = acc :: [cur]
 
 op :: split lines String => [String]
-      split lines s      =  split_lines_delim s 0 (str_len s) 10 "" []
+      split lines s      =  split lines delim s 0 (str len s) 10 "" []
 
 -- ============================================================================
 -- 1. BSD jot(1) — FR-FILTER-001
 -- ============================================================================
 
-fn :: is_omitted JotParam  => Bool
-      is_omitted Omitted   =  True
-      is_omitted (Given x) =  False
+fn :: is omitted JotParam  => Bool
+      is omitted Omitted   =  True
+      is omitted (Given x) =  False
 
-fn :: param_val JotParam  Int     => Int
-      param_val Omitted   def_val =  def_val
-      param_val (Given x) def_val =  x
+fn :: param val JotParam  Int     => Int
+      param val Omitted   def_val =  def_val
+      param val (Given x) def_val =  x
 
-op :: resolve jot params JotParam JotParam JotParam JotParam Int => (Int, Int, Int, Int)
+op :: resolve jot params JotParam JotParam JotParam JotParam Int => Int Int Int Int
       resolve jot params p_r p_b p_e p_s prec =
         scale = pow10 prec
         def_b = 1 * scale
         def_e = 100 * scale
         def_s = 1 * scale
-        resolve_jot_flags (not (is_omitted p_r)) (not (is_omitted p_b)) (not (is_omitted p_e)) (not (is_omitted p_s)) (param_val p_r 100) (param_val p_b def_b) (param_val p_e def_e) (param_val p_s def_s) scale
+        resolve jot flags (not (is omitted p_r)) (not (is omitted p_b)) (not (is omitted p_e)) (not (is omitted p_s)) (param val p_r 100) (param val p_b def_b) (param val p_e def_e) (param val p_s def_s) scale
 
-fn :: resolve_jot_flags Bool Bool Bool Bool Int Int Int Int Int => (Int, Int, Int, Int)
-      resolve_jot_flags False False False False r b e s scale = (100, 1 * scale, 100 * scale, 1 * scale)
-      resolve_jot_flags True False False False r b e s scale = (r, 1 * scale, r * scale, 1 * scale)
-      resolve_jot_flags True True False False r b e s scale = (r, b, b + ((r - 1) * scale), 1 * scale)
-      resolve_jot_flags True True True False r b e s scale = (r, b, e, infer_step r b e)
-      resolve_jot_flags False True True True r b e s scale = (infer_reps b e s, b, e, s)
-      resolve_jot_flags True True False True r b e s scale = (r, b, b + (s * (r - 1)), s)
-      resolve_jot_flags False True True False r b e s scale = (infer_reps b e ((default_dir b e) * scale), b, e, (default_dir b e) * scale)
-      resolve_jot_flags True False True False r b e s scale = (r, e - ((r - 1) * scale), e, 1 * scale)
-      resolve_jot_flags True False True True r b e s scale = (r, e - (s * (r - 1)), e, s)
-      resolve_jot_flags False True False True r b e s scale = (100, b, b + (s * 99), s)
-      resolve_jot_flags False False True True r b e s scale = (100, e - (s * 99), e, s)
-      resolve_jot_flags False False False True r b e s scale = (100, 1 * scale, (1 * scale) + (s * 99), s)
-      resolve_jot_flags False True False False r b e s scale = (100, b, b + (99 * scale), 1 * scale)
-      resolve_jot_flags False False True False r b e s scale = (e / scale, 1 * scale, e, 1 * scale)
-      resolve_jot_flags True True True True r b e s scale = (r, b, e, s)
+fn :: resolve jot flags Bool Bool Bool Bool Int Int Int Int Int => Int Int Int Int
+      resolve jot flags False False False False r b e s scale = (100, 1 * scale, 100 * scale, 1 * scale)
+      resolve jot flags True False False False r b e s scale = (r, 1 * scale, r * scale, 1 * scale)
+      resolve jot flags True True False False r b e s scale = (r, b, b + ((r - 1) * scale), 1 * scale)
+      resolve jot flags True True True False r b e s scale = (r, b, e, infer step r b e)
+      resolve jot flags False True True True r b e s scale = (infer reps b e s, b, e, s)
+      resolve jot flags True True False True r b e s scale = (r, b, b + (s * (r - 1)), s)
+      resolve jot flags False True True False r b e s scale = (infer reps b e ((default dir b e) * scale), b, e, (default dir b e) * scale)
+      resolve jot flags True False True False r b e s scale = (r, e - ((r - 1) * scale), e, 1 * scale)
+      resolve jot flags True False True True r b e s scale = (r, e - (s * (r - 1)), e, s)
+      resolve jot flags False True False True r b e s scale = (100, b, b + (s * 99), s)
+      resolve jot flags False False True True r b e s scale = (100, e - (s * 99), e, s)
+      resolve jot flags False False False True r b e s scale = (100, 1 * scale, (1 * scale) + (s * 99), s)
+      resolve jot flags False True False False r b e s scale = (100, b, b + (99 * scale), 1 * scale)
+      resolve jot flags False False True False r b e s scale = (e / scale, 1 * scale, e, 1 * scale)
+      resolve jot flags True True True True r b e s scale = (r, b, e, s)
 
-fn :: default_dir Int Int => Int
-      default_dir b   e   =
+fn :: default dir Int Int => Int
+      default dir b   e   =
         | e >= b = 1
         | otherwise = 0 - 1
 
-fn :: infer_step Int Int Int => Int
-      infer_step r   b   e   =
+fn :: infer step Int Int Int => Int
+      infer step r   b   e   =
         | r <= 1 = 0
         | otherwise = (e - b) / (r - 1)
 
-fn :: infer_reps Int Int Int => Int
-      infer_reps b   e   s   =
+fn :: infer reps Int Int Int => Int
+      infer reps b   e   s   =
         | s == 0 = 100
         | ((e > b) and (s < 0)) or ((e < b) and (s > 0)) = 0
         | otherwise = ((e - b) / s) + 1
 
-fn :: int_to_hex Int Bool  => String
-      int_to_hex 0   upper =  "0"
-      int_to_hex n   upper =
-        | n < 0 = "-" + (int_to_hex_loop (0 - n) upper "")
-        | otherwise = int_to_hex_loop n upper ""
+fn :: int to hex Int Bool  => String
+      int to hex 0   upper =  "0"
+      int to hex n   upper =
+        | n < 0 = "-" + (int to hex loop (0 - n) upper "")
+        | otherwise = int to hex loop n upper ""
 
-fn :: int_to_hex_loop Int Bool  String => String
-      int_to_hex_loop 0   upper acc    =  acc
-      int_to_hex_loop n   upper acc    =
+fn :: int to hex loop Int Bool String => String
+      int to hex loop 0 upper acc = acc
+      int to hex loop n upper acc =
         d = n % 16
-        int_to_hex_loop (n / 16) upper ((hex_digit d upper) + acc)
+        int to hex loop (n / 16) upper ((hex digit d upper) + acc)
 
-fn :: hex_digit Int Bool  => String
-      hex_digit d   upper =
-        | d < 10 = int_to_str d
-        | upper = char_from_code (55 + d)
-        | otherwise = char_from_code (87 + d)
+fn :: hex digit Int Bool  => String
+      hex digit d   upper =
+        | d < 10 = int to str d
+        | upper = char from code (55 + d)
+        | otherwise = char from code (87 + d)
 
-fn :: int_to_octal Int => String
-      int_to_octal 0   =  "0"
-      int_to_octal n   =
-        | n < 0 = "-" + (int_to_octal_loop (0 - n) "")
-        | otherwise = int_to_octal_loop n ""
+fn :: int to octal Int => String
+      int to octal 0   =  "0"
+      int to octal n   =
+        | n < 0 = "-" + (int to octal loop (0 - n) "")
+        | otherwise = int to octal loop n ""
 
-fn :: int_to_octal_loop Int String => String
-      int_to_octal_loop 0   acc    =  acc
-      int_to_octal_loop n   acc    =  int_to_octal_loop (n / 8) ((int_to_str (n % 8)) + acc)
+fn :: int to octal loop Int String => String
+      int to octal loop 0 acc = acc
+      int to octal loop n acc = int to octal loop (n / 8) ((int to str (n % 8)) + acc)
 
-fn :: format_jot_item Int JotSpec => String
-      format_jot_item val spec    =
+fn :: format jot item Int JotSpec => String
+      format jot item val spec    =
         | j_has_word spec = j_word spec
-        | (j_char_mode spec) and ((str_len (j_fmt spec)) > 0) = format_printf_jot (j_fmt spec) val (j_prec spec) True
-        | j_char_mode spec = char_from_code val
-        | (str_len (j_fmt spec)) > 0 = format_printf_jot (j_fmt spec) val (j_prec spec) False
-        | otherwise = format_scaled_int val (j_prec spec)
+        | (j_char_mode spec) and ((str len (j_fmt spec)) > 0) = format printf jot (j_fmt spec) val (j_prec spec) True
+        | j_char_mode spec = char from code val
+        | (str len (j_fmt spec)) > 0 = format printf jot (j_fmt spec) val (j_prec spec) False
+        | otherwise = format scaled int val (j_prec spec)
 
-fn :: format_printf_jot String Int Int  Bool      => String
-      format_printf_jot fmt    val prec char_mode =
-        | (str_len fmt) == 0 = format_scaled_int val prec
-        | not (str_contains fmt "%") = fmt + (format_scaled_int val prec)
-        | otherwise = printf_jot_loop fmt 0 (str_len fmt) val prec char_mode ""
+fn :: format printf jot String Int Int Bool => String
+      format printf jot fmt val prec char_mode =
+        | (str len fmt) == 0 = format scaled int val prec
+        | not (str contains fmt "%") = fmt + (format scaled int val prec)
+        | otherwise = printf jot loop fmt 0 (str len fmt) val prec char_mode ""
 
-fn :: printf_jot_loop String Int Int Int Int Bool String => String
-      printf_jot_loop fmt idx len val prec char_mode acc =
+fn :: printf jot loop String Int Int Int Int Bool String => String
+      printf jot loop fmt idx len val prec char_mode acc =
         | idx >= len = acc
-        | ((str_char_at fmt idx) == 37) and ((idx + 1) < len) and ((str_char_at fmt (idx + 1)) == 37) = printf_jot_loop fmt (idx + 2) len val prec char_mode (acc + "%")
-        | ((str_char_at fmt idx) == 37) and ((idx + 1) < len) = printf_parse_spec fmt (idx + 1) len val prec char_mode acc
-        | otherwise = printf_jot_loop fmt (idx + 1) len val prec char_mode (acc + (str_slice fmt idx (idx + 1)))
+        | ((str char at fmt idx) == 37) and ((idx + 1) < len) and ((str char at fmt (idx + 1)) == 37) = printf jot loop fmt (idx + 2) len val prec char_mode (acc + "%")
+        | ((str char at fmt idx) == 37) and ((idx + 1) < len) = printf parse spec fmt (idx + 1) len val prec char_mode acc
+        | otherwise = printf jot loop fmt (idx + 1) len val prec char_mode (acc + (str slice fmt idx (idx + 1)))
 
-fn :: printf_parse_spec String Int Int Int Int Bool String => String
-      printf_parse_spec fmt idx len val prec char_mode acc =
-        left_align = (idx < len) and ((str_char_at fmt idx) == 45)
-        idx1 = advance_if left_align idx
-        zero_pad = (idx1 < len) and ((str_char_at fmt idx1) == 48)
-        idx2 = advance_if zero_pad idx1
-        width_pair = read_digits_at fmt idx2 len ""
+fn :: printf parse spec String Int Int Int Int Bool String => String
+      printf parse spec fmt idx len val prec char_mode acc =
+        left_align = (idx < len) and ((str char at fmt idx) == 45)
+        idx1 = advance if left_align idx
+        zero_pad = (idx1 < len) and ((str char at fmt idx1) == 48)
+        idx2 = advance if zero_pad idx1
+        width_pair = read digits at fmt idx2 len ""
         width_str = fst width_pair
         idx3 = snd width_pair
-        prec_pair = read_opt_prec fmt idx3 len prec
+        prec_pair = read opt prec fmt idx3 len prec
         spec_prec = fst prec_pair
         idx4 = snd prec_pair
-        conv_code = char_at_or fmt idx4 100
-        rendered = render_printf_conv conv_code val prec spec_prec char_mode
-        padded = apply_printf_pad rendered (str_to_int width_str) left_align zero_pad
-        printf_jot_loop fmt (idx4 + 1) len val prec char_mode (acc + padded)
+        conv_code = char at or fmt idx4 100
+        rendered = render printf conv conv_code val prec spec_prec char_mode
+        padded = apply printf pad rendered (str to int width_str) left_align zero_pad
+        printf jot loop fmt (idx4 + 1) len val prec char_mode (acc + padded)
 
-fn :: advance_if Bool  Int => Int
-      advance_if True  idx =  idx + 1
-      advance_if False idx =  idx
+fn :: advance if Bool  Int => Int
+      advance if True  idx =  idx + 1
+      advance if False idx =  idx
 
-fn :: read_digits_at String Int Int String => (String, Int)
-      read_digits_at s      idx len acc    =
+fn :: read digits at String Int Int String => String Int
+      read digits at s idx len acc =
         | idx >= len = (acc, idx)
-        | ((str_char_at s idx) >= 48) and ((str_char_at s idx) <= 57) = read_digits_at s (idx + 1) len (acc + (str_slice s idx (idx + 1)))
+        | ((str char at s idx) >= 48) and ((str char at s idx) <= 57) = read digits at s (idx + 1) len (acc + (str slice s idx (idx + 1)))
         | otherwise = (acc, idx)
 
-fn :: read_opt_prec String Int Int Int      => (Int, Int)
-      read_opt_prec s      idx len def_prec =
-        | (idx < len) and ((str_char_at s idx) == 46) = read_opt_prec_digits s (idx + 1) len
+fn :: read opt prec String Int Int Int => Int Int
+      read opt prec s idx len def_prec =
+        | (idx < len) and ((str char at s idx) == 46) = read opt prec digits s (idx + 1) len
         | otherwise = (def_prec, idx)
 
-fn :: read_opt_prec_digits String Int Int => (Int, Int)
-      read_opt_prec_digits s      idx len =
-        pair = read_digits_at s idx len ""
-        (str_to_int (fst pair), snd pair)
+fn :: read opt prec digits String Int Int => Int Int
+      read opt prec digits s idx len =
+        pair = read digits at s idx len ""
+        (str to int (fst pair), snd pair)
 
-fn :: char_at_or String Int Int      => Int
-      char_at_or s      idx fallback =
-        | idx >= (str_len s) = fallback
-        | otherwise = str_char_at s idx
+fn :: char at or String Int Int => Int
+      char at or s idx fallback =
+        | idx >= (str len s) = fallback
+        | otherwise = str char at s idx
 
-fn :: render_printf_conv Int Int Int Int Bool => String
-      render_printf_conv conv val orig_prec spec_prec char_mode =
-        | (conv == 99) or char_mode = char_from_code (val / (pow10 orig_prec))
-        | conv == 120 = int_to_hex (val / (pow10 orig_prec)) False
-        | conv == 88 = int_to_hex (val / (pow10 orig_prec)) True
-        | conv == 111 = int_to_octal (val / (pow10 orig_prec))
-        | conv == 102 = format_rescaled val orig_prec spec_prec
-        | otherwise = format_scaled_int val orig_prec
+fn :: render printf conv Int Int Int Int Bool => String
+      render printf conv conv val orig_prec spec_prec char_mode =
+        | (conv == 99) or char_mode = char from code (val / (pow10 orig_prec))
+        | conv == 120 = int to hex (val / (pow10 orig_prec)) False
+        | conv == 88 = int to hex (val / (pow10 orig_prec)) True
+        | conv == 111 = int to octal (val / (pow10 orig_prec))
+        | conv == 102 = format rescaled val orig_prec spec_prec
+        | otherwise = format scaled int val orig_prec
 
-fn :: format_rescaled Int Int       Int         => String
-      format_rescaled val orig_prec target_prec =
-        | target_prec == orig_prec = format_scaled_int val orig_prec
-        | target_prec > orig_prec = format_scaled_int (val * (pow10 (target_prec - orig_prec))) target_prec
-        | otherwise = format_scaled_int (val / (pow10 (orig_prec - target_prec))) target_prec
+fn :: format rescaled Int Int       Int         => String
+      format rescaled val orig_prec target_prec =
+        | target_prec == orig_prec = format scaled int val orig_prec
+        | target_prec > orig_prec = format scaled int (val * (pow10 (target_prec - orig_prec))) target_prec
+        | otherwise = format scaled int (val / (pow10 (orig_prec - target_prec))) target_prec
 
-fn :: apply_printf_pad String Int   Bool       Bool     => String
-      apply_printf_pad s      width left_align zero_pad =
+fn :: apply printf pad String Int Bool Bool => String
+      apply printf pad s width left_align zero_pad =
         | width <= 0 = s
-        | left_align = pad_right s width
-        | zero_pad = pad_zero_signed s width
-        | otherwise = pad_left s width
+        | left_align = pad right s width
+        | zero_pad = pad zero signed s width
+        | otherwise = pad left s width
 
-fn :: pad_zero_signed String Int   => String
-      pad_zero_signed s      width =
-        | (str_len s) >= width = s
-        | ((str_len s) > 0) and ((str_char_at s 0) == 45) = "-" + (pad_left_char (str_slice s 1 (str_len s)) (width - 1) "0")
-        | otherwise = pad_left_char s width "0"
+fn :: pad zero signed String Int   => String
+      pad zero signed s      width =
+        | (str len s) >= width = s
+        | ((str len s) > 0) and ((str char at s 0) == 45) = "-" + (pad left char (str slice s 1 (str len s)) (width - 1) "0")
+        | otherwise = pad left char s width "0"
 
-fn :: gen_jot_items Int Int Int Int JotSpec [String] => [String]
-      gen_jot_items idx reps cur step spec acc =
+fn :: gen jot items Int Int Int Int JotSpec [String] => [String]
+      gen jot items idx reps cur step spec acc =
         | idx >= reps = acc
-        | otherwise = gen_jot_items (idx + 1) reps (cur + step) step spec (acc :: [format_jot_item cur spec])
+        | otherwise = gen jot items (idx + 1) reps (cur + step) step spec (acc :: [format jot item cur spec])
 
-fn :: next_prng Int   => Int
-      next_prng state =  ((state * 1103515245) + 12345) % 2147483648
+fn :: next prng Int   => Int
+      next prng state =  ((state * 1103515245) + 12345) % 2147483648
 
-fn :: gen_jot_random Int Int Int Int Int JotSpec [String] => [String]
-      gen_jot_random idx reps lo hi state spec acc =
+fn :: gen jot random Int Int Int Int Int JotSpec [String] => [String]
+      gen jot random idx reps lo hi state spec acc =
         | idx >= reps = acc
         | otherwise =
-          st1 = abs_int (next_prng state)
-          span = max_int 1 ((hi - lo) + 1)
+          st1 = abs int (next prng state)
+          span = max int 1 ((hi - lo) + 1)
           val = lo + (st1 % span)
-          (gen_jot_random (idx + 1) reps lo hi st1 spec (acc :: [format_jot_item val spec]))
+          (gen jot random (idx + 1) reps lo hi st1 spec (acc :: [format jot item val spec]))
 
 op :: evaluate jot JotSpec => String
       evaluate jot spec    =
         tuple = resolve jot params (j_reps spec) (j_begin spec) (j_end spec) (j_step spec) (j_prec spec)
-        reps = tuple_4_1 tuple
-        begin_val = tuple_4_2 tuple
-        end_val = tuple_4_3 tuple
-        step_val = tuple_4_4 tuple
-        items = select_jot_items (j_random spec) reps begin_val end_val step_val spec
-        join_with items (j_sep spec)
+        reps = tuple4 c1 tuple
+        begin_val = tuple4 c2 tuple
+        end_val = tuple4 c3 tuple
+        step_val = tuple4 c4 tuple
+        items = select jot items (j_random spec) reps begin_val end_val step_val spec
+        join with items (j_sep spec)
 
-fn :: select_jot_items Bool Int Int Int Int JotSpec => [String]
-      select_jot_items False reps begin_val end_val step_val spec = gen_jot_items 0 reps begin_val step_val spec []
-      select_jot_items True reps begin_val end_val step_val spec =
-        lo = min_int begin_val end_val
-        hi = max_int begin_val end_val
-        seed = max_int 1 (abs_int step_val)
-        gen_jot_random 0 reps lo hi seed spec []
+fn :: select jot items Bool Int Int Int Int JotSpec => [String]
+      select jot items False reps begin_val end_val step_val spec = gen jot items 0 reps begin_val step_val spec []
+      select jot items True reps begin_val end_val step_val spec =
+        lo = min int begin_val end_val
+        hi = max int begin_val end_val
+        seed = max int 1 (abs int step_val)
+        gen jot random 0 reps lo hi seed spec []
 
-fn :: min_int Int Int => Int
-      min_int a   b   =
+fn :: min int Int Int => Int
+      min int a   b   =
         | a <= b = a
         | otherwise = b
 
-fn :: tuple_4_1 (A, B, C, D) => A
-      tuple_4_1 (a, _, _, _) =  a
+fn :: tuple4 c1 (A, B, C, D) => A
+      tuple4 c1 (a, _, _, _) =  a
 
-fn :: tuple_4_2 (A, B, C, D) => B
-      tuple_4_2 (_, b, _, _) =  b
+fn :: tuple4 c2 (A, B, C, D) => B
+      tuple4 c2 (_, b, _, _) =  b
 
-fn :: tuple_4_3 (A, B, C, D) => C
-      tuple_4_3 (_, _, c, _) =  c
+fn :: tuple4 c3 (A, B, C, D) => C
+      tuple4 c3 (_, _, c, _) =  c
 
-fn :: tuple_4_4 (A, B, C, D) => D
-      tuple_4_4 (_, _, _, d) =  d
+fn :: tuple4 c4 (A, B, C, D) => D
+      tuple4 c4 (_, _, _, d) =  d
 
-fn :: parse_jot_param String Bool      Int  => JotParam
-      parse_jot_param s      char_mode prec =
+fn :: parse jot param String Bool Int => JotParam
+      parse jot param s char_mode prec =
         | s == "-" = Omitted
-        | char_mode and ((str_len s) == 1) and (not (is_digits_only s)) = Given (str_char_at s 0)
-        | otherwise = Given (parse_scaled_int s prec)
+        | char_mode and ((str len s) == 1) and (not (is digits only s)) = Given (str char at s 0)
+        | otherwise = Given (parse scaled int s prec)
 
-fn :: default_jot_spec => JotSpec
-      default_jot_spec =  JotSpec Omitted Omitted Omitted Omitted "" False "" False (char_from_code 10) False False (0 - 1)
+fn :: default jot spec => JotSpec
+      default jot spec =  JotSpec Omitted Omitted Omitted Omitted "" False "" False (char from code 10) False False (0 - 1)
 
 op :: parse jot args [String] => JotSpec
-      parse jot args args     =  parse_jot_loop args False default_jot_spec []
+      parse jot args args     =  parse jot loop args False (default jot spec) []
 
-fn :: is_jot_flag_cluster String => Bool
-      is_jot_flag_cluster s      =
-        | (str_len s) <= 1 = False
-        | (str_char_at s 0) != 45 = False
-        | otherwise = is_jot_cluster_loop s 1 (str_len s)
+fn :: is jot flag cluster String => Bool
+      is jot flag cluster s      =
+        | (str len s) <= 1 = False
+        | (str char at s 0) != 45 = False
+        | otherwise = is jot cluster loop s 1 (str len s)
 
-fn :: is_jot_cluster_loop String Int Int => Bool
-      is_jot_cluster_loop s      idx len =
+fn :: is jot cluster loop String Int Int => Bool
+      is jot cluster loop s idx len =
         | idx >= len = True
-        | ((str_char_at s idx) == 99) or ((str_char_at s idx) == 110) or ((str_char_at s idx) == 114) = is_jot_cluster_loop s (idx + 1) len
+        | ((str char at s idx) == 99) or ((str char at s idx) == 110) or ((str char at s idx) == 114) = is jot cluster loop s (idx + 1) len
         | otherwise = False
 
-fn :: apply_jot_cluster String Int Int JotSpec => JotSpec
-      apply_jot_cluster s      idx len spec    =
+fn :: apply jot cluster String Int Int JotSpec => JotSpec
+      apply jot cluster s idx len spec =
         | idx >= len = spec
-        | (str_char_at s idx) == 99 = apply_jot_cluster s (idx + 1) len (spec with j_char_mode: True)
-        | (str_char_at s idx) == 110 = apply_jot_cluster s (idx + 1) len (spec with j_no_newline: True)
-        | (str_char_at s idx) == 114 = apply_jot_cluster s (idx + 1) len (spec with j_random: True)
-        | otherwise = apply_jot_cluster s (idx + 1) len spec
+        | (str char at s idx) == 99 = apply jot cluster s (idx + 1) len (spec with j_char_mode = True)
+        | (str char at s idx) == 110 = apply jot cluster s (idx + 1) len (spec with j_no_newline = True)
+        | (str char at s idx) == 114 = apply jot cluster s (idx + 1) len (spec with j_random = True)
+        | otherwise = apply jot cluster s (idx + 1) len spec
 
-fn :: parse_jot_loop [String]   Bool      JotSpec [String] => JotSpec
-      parse_jot_loop []         stop_opts spec    pos      =  assign_jot_pos pos spec
-      parse_jot_loop (arg:rest) True      spec    pos      =  parse_jot_loop rest True spec (pos :: [arg])
-      parse_jot_loop (arg:rest) False     spec    pos      =
-        | arg == "--" = parse_jot_loop rest True spec pos
-        | arg == "-" = parse_jot_loop rest False spec (pos :: [arg])
-        | is_numeric_arg arg = parse_jot_loop rest False spec (pos :: [arg])
-        | is_jot_flag_cluster arg = parse_jot_loop rest False (apply_jot_cluster arg 1 (str_len arg) spec) pos
-        | arg == "-b" = parse_jot_flag_b rest spec pos
-        | arg == "-w" = parse_jot_flag_w rest spec pos
-        | arg == "-s" = parse_jot_flag_s rest spec pos
-        | arg == "-p" = parse_jot_flag_p rest spec pos
-        | str_starts_with arg "-b" = parse_jot_inline_b (str_slice arg 2 (str_len arg)) rest spec pos
-        | str_starts_with arg "-w" = parse_jot_inline_w (str_slice arg 2 (str_len arg)) rest spec pos
-        | str_starts_with arg "-s" = parse_jot_inline_s (str_slice arg 2 (str_len arg)) rest spec pos
-        | str_starts_with arg "-p" = parse_jot_inline_p (str_slice arg 2 (str_len arg)) rest spec pos
-        | otherwise = parse_jot_loop rest False spec (pos :: [arg])
+fn :: parse jot loop [String] Bool JotSpec [String] => JotSpec
+      parse jot loop [] stop_opts spec pos = assign jot pos pos spec
+      parse jot loop (arg:rest) True spec pos = parse jot loop rest True spec (pos :: [arg])
+      parse jot loop (arg:rest) False spec pos =
+        | arg == "--" = parse jot loop rest True spec pos
+        | arg == "-" = parse jot loop rest False spec (pos :: [arg])
+        | is numeric arg arg = parse jot loop rest False spec (pos :: [arg])
+        | is jot flag cluster arg = parse jot loop rest False (apply jot cluster arg 1 (str len arg) spec) pos
+        | arg == "-b" = parse jot flag b rest spec pos
+        | arg == "-w" = parse jot flag w rest spec pos
+        | arg == "-s" = parse jot flag s rest spec pos
+        | arg == "-p" = parse jot flag p rest spec pos
+        | str starts with arg "-b" = parse jot inline b (str slice arg 2 (str len arg)) rest spec pos
+        | str starts with arg "-w" = parse jot inline w (str slice arg 2 (str len arg)) rest spec pos
+        | str starts with arg "-s" = parse jot inline s (str slice arg 2 (str len arg)) rest spec pos
+        | str starts with arg "-p" = parse jot inline p (str slice arg 2 (str len arg)) rest spec pos
+        | otherwise = parse jot loop rest False spec (pos :: [arg])
 
-fn :: parse_jot_flag_b [String]    JotSpec [String] => JotSpec
-      parse_jot_flag_b []          spec    pos      =  assign_jot_pos pos spec
-      parse_jot_flag_b (word:rest) spec    pos      =  parse_jot_inline_b word rest spec pos
+fn :: parse jot flag b [String] JotSpec [String] => JotSpec
+      parse jot flag b [] spec pos = assign jot pos pos spec
+      parse jot flag b (word:rest) spec pos = parse jot inline b word rest spec pos
 
-fn :: parse_jot_inline_b String [String] JotSpec [String] => JotSpec
-      parse_jot_inline_b word   rest     spec    pos      =
-        parse_jot_loop rest False (spec with j_word: word, j_has_word: True) pos
+fn :: parse jot inline b String [String] JotSpec [String] => JotSpec
+      parse jot inline b word rest spec pos = parse jot loop rest False (spec with j_word = word, j_has_word = True) pos
 
-fn :: parse_jot_flag_w [String]   JotSpec [String] => JotSpec
-      parse_jot_flag_w []         spec    pos      =  assign_jot_pos pos spec
-      parse_jot_flag_w (fmt:rest) spec    pos      =  parse_jot_inline_w fmt rest spec pos
+fn :: parse jot flag w [String] JotSpec [String] => JotSpec
+      parse jot flag w [] spec pos = assign jot pos pos spec
+      parse jot flag w (fmt:rest) spec pos = parse jot inline w fmt rest spec pos
 
-fn :: parse_jot_inline_w String [String] JotSpec [String] => JotSpec
-      parse_jot_inline_w fmt    rest     spec    pos      =
-        parse_jot_loop rest False (spec with j_fmt: fmt) pos
+fn :: parse jot inline w String [String] JotSpec [String] => JotSpec
+      parse jot inline w fmt rest spec pos = parse jot loop rest False (spec with j_fmt = fmt) pos
 
-fn :: parse_jot_flag_s [String]   JotSpec [String] => JotSpec
-      parse_jot_flag_s []         spec    pos      =  assign_jot_pos pos spec
-      parse_jot_flag_s (sep:rest) spec    pos      =  parse_jot_inline_s sep rest spec pos
+fn :: parse jot flag s [String] JotSpec [String] => JotSpec
+      parse jot flag s [] spec pos = assign jot pos pos spec
+      parse jot flag s (sep:rest) spec pos = parse jot inline s sep rest spec pos
 
-fn :: parse_jot_inline_s String [String] JotSpec [String] => JotSpec
-      parse_jot_inline_s sep    rest     spec    pos      =
-        parse_jot_loop rest False (spec with j_sep: sep) pos
+fn :: parse jot inline s String [String] JotSpec [String] => JotSpec
+      parse jot inline s sep rest spec pos = parse jot loop rest False (spec with j_sep = sep) pos
 
-fn :: parse_jot_flag_p [String] JotSpec [String] => JotSpec
-      parse_jot_flag_p []       spec    pos      =  assign_jot_pos pos spec
-      parse_jot_flag_p (p:rest) spec    pos      =  parse_jot_inline_p p rest spec pos
+fn :: parse jot flag p [String] JotSpec [String] => JotSpec
+      parse jot flag p [] spec pos = assign jot pos pos spec
+      parse jot flag p (p:rest) spec pos = parse jot inline p p rest spec pos
 
-fn :: parse_jot_inline_p String [String] JotSpec [String] => JotSpec
-      parse_jot_inline_p p      rest     spec    pos      =
-        parse_jot_loop rest False (spec with j_prec: str_to_int p) pos
+fn :: parse jot inline p String [String] JotSpec [String] => JotSpec
+      parse jot inline p p rest spec pos = parse jot loop rest False (spec with j_prec = (str to int p)) pos
 
-fn :: extract_fmt_prec String Int Int => Int
-      extract_fmt_prec fmt    idx len =
+fn :: extract fmt prec String Int Int => Int
+      extract fmt prec fmt idx len =
         | (idx + 2) >= len = 0
-        | ((str_char_at fmt idx) == 37) and ((str_char_at fmt (idx + 1)) == 46) = str_to_int (fst (read_digits_at fmt (idx + 2) len ""))
-        | otherwise = extract_fmt_prec fmt (idx + 1) len
+        | ((str char at fmt idx) == 37) and ((str char at fmt (idx + 1)) == 46) = str to int (fst (read digits at fmt (idx + 2) len ""))
+        | otherwise = extract fmt prec fmt (idx + 1) len
 
-fn :: infer_pos_prec [String] Int  => Int
-      infer_pos_prec []       best =  best
-      infer_pos_prec (x:xs)   best =  infer_pos_prec xs (max_int best (decimal_places x))
+fn :: infer pos prec [String] Int  => Int
+      infer pos prec []       best =  best
+      infer pos prec (x:xs)   best =  infer pos prec xs (max int best (decimal places x))
 
-fn :: resolve_jot_prec [String] Int           String => Int
-      resolve_jot_prec pos      explicit_prec fmt    =
+fn :: resolve jot prec [String] Int String => Int
+      resolve jot prec pos explicit_prec fmt =
         | explicit_prec >= 0 = explicit_prec
-        | otherwise = max_int (infer_pos_prec pos 0) (extract_fmt_prec fmt 0 (str_len fmt))
+        | otherwise = max int (infer pos prec pos 0) (extract fmt prec fmt 0 (str len fmt))
 
-fn :: assign_jot_pos [String]           JotSpec => JotSpec
-      assign_jot_pos []                 spec    =
-        spec with j_prec: max_int 0 (j_prec spec)
-      assign_jot_pos (p1:[])            spec    =
-        pr = resolve_jot_prec [p1] (j_prec spec) (j_fmt spec)
-        spec with j_reps: parse_jot_param p1 False 0, j_prec: pr
-      assign_jot_pos (p1:p2:[])         spec    =
-        pr = resolve_jot_prec [p2] (j_prec spec) (j_fmt spec)
-        spec with j_reps: parse_jot_param p1 False 0, j_begin: parse_jot_param p2 (j_char_mode spec) pr, j_prec: pr
-      assign_jot_pos (p1:p2:p3:[])      spec    =
-        pr = resolve_jot_prec [p2, p3] (j_prec spec) (j_fmt spec)
-        spec with j_reps: parse_jot_param p1 False 0, j_begin: parse_jot_param p2 (j_char_mode spec) pr, j_end: parse_jot_param p3 (j_char_mode spec) pr, j_prec: pr
-      assign_jot_pos (p1:p2:p3:p4:rest) spec    =
-        pr = resolve_jot_prec [p2, p3, p4] (j_prec spec) (j_fmt spec)
-        step_pr = select_step_prec (j_random spec) pr
-        spec with j_reps: parse_jot_param p1 False 0, j_begin: parse_jot_param p2 (j_char_mode spec) pr, j_end: parse_jot_param p3 (j_char_mode spec) pr, j_step: parse_jot_param p4 False step_pr, j_prec: pr
+fn :: assign jot pos [String]           JotSpec => JotSpec
+      assign jot pos []                 spec    =  spec with j_prec = (max int 0 (j_prec spec))
+      assign jot pos (p1:[])            spec    =
+        pr = resolve jot prec [p1] (j_prec spec) (j_fmt spec)
+        res = spec with j_reps = (parse jot param p1 False 0), j_prec = pr
+        res
+      assign jot pos (p1:p2:[])         spec    =
+        pr = resolve jot prec [p2] (j_prec spec) (j_fmt spec)
+        res = spec with j_reps = (parse jot param p1 False 0), j_begin = (parse jot param p2 (j_char_mode spec) pr), j_prec = pr
+        res
+      assign jot pos (p1:p2:p3:[])      spec    =
+        pr = resolve jot prec [p2, p3] (j_prec spec) (j_fmt spec)
+        res = spec with j_reps = (parse jot param p1 False 0), j_begin = (parse jot param p2 (j_char_mode spec) pr), j_end = (parse jot param p3 (j_char_mode spec) pr), j_prec = pr
+        res
+      assign jot pos (p1:p2:p3:p4:rest) spec    =
+        pr = resolve jot prec [p2, p3, p4] (j_prec spec) (j_fmt spec)
+        step_pr = select step prec (j_random spec) pr
+        res = spec with j_reps = (parse jot param p1 False 0), j_begin = (parse jot param p2 (j_char_mode spec) pr), j_end = (parse jot param p3 (j_char_mode spec) pr), j_step = (parse jot param p4 False step_pr), j_prec = pr
+        res
 
-fn :: select_step_prec Bool  Int => Int
-      select_step_prec True  pr  =  0
-      select_step_prec False pr  =  pr
+fn :: select step prec Bool  Int => Int
+      select step prec True  pr  =  0
+      select step prec False pr  =  pr
 
 op :: run jot [String] => String
       run jot args     =  evaluate jot (parse jot args args)
@@ -589,369 +588,364 @@ op :: run jot [String] => String
 -- 2. BSD rs(1) — FR-FILTER-001
 -- ============================================================================
 
-fn :: default_rs_spec => RsSpec
-      default_rs_spec =  RsSpec 0 0 False "" "" False 2 False 0 False 0 False False False []
+fn :: default rs spec => RsSpec
+      default rs spec =  RsSpec 0 0 False "" "" False 2 False 0 False 0 False False False []
 
 op :: parse rs args [String] => RsSpec
-      parse rs args args     =  parse_rs_loop args default_rs_spec []
+      parse rs args args     =  parse rs loop args (default rs spec) []
 
-fn :: is_rs_flag_cluster String => Bool
-      is_rs_flag_cluster s      =
-        | (str_len s) <= 1 = False
-        | (str_char_at s 0) != 45 = False
-        | otherwise = is_rs_cluster_loop s 1 (str_len s)
+fn :: is rs flag cluster String => Bool
+      is rs flag cluster s      =
+        | (str len s) <= 1 = False
+        | (str char at s 0) != 45 = False
+        | otherwise = is rs cluster loop s 1 (str len s)
 
-fn :: is_rs_cluster_loop String Int Int => Bool
-      is_rs_cluster_loop s      idx len =
+fn :: is rs cluster loop String Int Int => Bool
+      is rs cluster loop s idx len =
         | idx >= len = True
-        | ((str_char_at s idx) == 116) or ((str_char_at s idx) == 106) or ((str_char_at s idx) == 101) or ((str_char_at s idx) == 121) or ((str_char_at s idx) == 104) or ((str_char_at s idx) == 72) or ((str_char_at s idx) == 122) = is_rs_cluster_loop s (idx + 1) len
+        | ((str char at s idx) == 116) or ((str char at s idx) == 106) or ((str char at s idx) == 101) or ((str char at s idx) == 121) or ((str char at s idx) == 104) or ((str char at s idx) == 72) or ((str char at s idx) == 122) = is rs cluster loop s (idx + 1) len
         | otherwise = False
 
-fn :: apply_rs_cluster String Int Int RsSpec => RsSpec
-      apply_rs_cluster s      idx len spec   =
+fn :: apply rs cluster String Int Int RsSpec => RsSpec
+      apply rs cluster s idx len spec =
         | idx >= len = spec
-        | (str_char_at s idx) == 116 = apply_rs_cluster s (idx + 1) len (spec with r_transpose: True)
-        | (str_char_at s idx) == 106 = apply_rs_cluster s (idx + 1) len (spec with r_right_align: True)
-        | (str_char_at s idx) == 101 = apply_rs_cluster s (idx + 1) len (spec with r_line_entries: True)
-        | (str_char_at s idx) == 121 = apply_rs_cluster s (idx + 1) len (spec with r_recycle: True)
-        | ((str_char_at s idx) == 104) or ((str_char_at s idx) == 72) = apply_rs_cluster s (idx + 1) len (spec with r_shape_only: True)
-        | (str_char_at s idx) == 122 = apply_rs_cluster s (idx + 1) len (spec with r_squeeze: True)
-        | otherwise = apply_rs_cluster s (idx + 1) len spec
+        | (str char at s idx) == 116 = apply rs cluster s (idx + 1) len (spec with r_transpose = True)
+        | (str char at s idx) == 106 = apply rs cluster s (idx + 1) len (spec with r_right_align = True)
+        | (str char at s idx) == 101 = apply rs cluster s (idx + 1) len (spec with r_line_entries = True)
+        | (str char at s idx) == 121 = apply rs cluster s (idx + 1) len (spec with r_recycle = True)
+        | ((str char at s idx) == 104) or ((str char at s idx) == 72) = apply rs cluster s (idx + 1) len (spec with r_shape_only = True)
+        | (str char at s idx) == 122 = apply rs cluster s (idx + 1) len (spec with r_squeeze = True)
+        | otherwise = apply rs cluster s (idx + 1) len spec
 
-fn :: parse_rs_loop [String]   RsSpec [String] => RsSpec
-      parse_rs_loop []         spec   pos      =  assign_rs_pos pos spec
-      parse_rs_loop (arg:rest) spec   pos      =
-        | is_rs_flag_cluster arg = parse_rs_loop rest (apply_rs_cluster arg 1 (str_len arg) spec) pos
-        | (arg == "-c") or (arg == "-s") = parse_rs_flag_c rest spec pos
-        | (arg == "-C") or (arg == "-S") = parse_rs_flag_cap_c rest spec pos
-        | arg == "-g" = parse_rs_flag_g rest spec pos
-        | arg == "-w" = parse_rs_flag_w rest spec pos
-        | arg == "-k" = parse_rs_flag_k rest spec pos
-        | (str_starts_with arg "-c") or (str_starts_with arg "-s") = parse_rs_inline_c (str_slice arg 2 (str_len arg)) rest spec pos
-        | (str_starts_with arg "-C") or (str_starts_with arg "-S") = parse_rs_inline_cap_c (str_slice arg 2 (str_len arg)) rest spec pos
-        | str_starts_with arg "-g" = parse_rs_inline_g (str_slice arg 2 (str_len arg)) rest spec pos
-        | str_starts_with arg "-w" = parse_rs_inline_w (str_slice arg 2 (str_len arg)) rest spec pos
-        | str_starts_with arg "-k" = parse_rs_inline_k (str_slice arg 2 (str_len arg)) rest spec pos
-        | otherwise = parse_rs_loop rest spec (pos :: [arg])
+fn :: parse rs loop [String] RsSpec [String] => RsSpec
+      parse rs loop [] spec pos = assign rs pos pos spec
+      parse rs loop (arg:rest) spec pos =
+        | is rs flag cluster arg = parse rs loop rest (apply rs cluster arg 1 (str len arg) spec) pos
+        | (arg == "-c") or (arg == "-s") = parse rs flag c rest spec pos
+        | (arg == "-C") or (arg == "-S") = parse rs flag cap c rest spec pos
+        | arg == "-g" = parse rs flag g rest spec pos
+        | arg == "-w" = parse rs flag w rest spec pos
+        | arg == "-k" = parse rs flag k rest spec pos
+        | (str starts with arg "-c") or (str starts with arg "-s") = parse rs inline c (str slice arg 2 (str len arg)) rest spec pos
+        | (str starts with arg "-C") or (str starts with arg "-S") = parse rs inline cap c (str slice arg 2 (str len arg)) rest spec pos
+        | str starts with arg "-g" = parse rs inline g (str slice arg 2 (str len arg)) rest spec pos
+        | str starts with arg "-w" = parse rs inline w (str slice arg 2 (str len arg)) rest spec pos
+        | str starts with arg "-k" = parse rs inline k (str slice arg 2 (str len arg)) rest spec pos
+        | otherwise = parse rs loop rest spec (pos :: [arg])
 
-fn :: parse_rs_flag_c [String]   RsSpec [String] => RsSpec
-      parse_rs_flag_c []         spec   pos      =  parse_rs_inline_c (char_from_code 9) [] spec pos
-      parse_rs_flag_c (sep:rest) spec   pos      =  parse_rs_inline_c sep rest spec pos
+fn :: parse rs flag c [String] RsSpec [String] => RsSpec
+      parse rs flag c [] spec pos = parse rs inline c (char from code 9) [] spec pos
+      parse rs flag c (sep:rest) spec pos = parse rs inline c sep rest spec pos
 
-fn :: parse_rs_flag_cap_c [String]   RsSpec [String] => RsSpec
-      parse_rs_flag_cap_c []         spec   pos      =  parse_rs_inline_cap_c (char_from_code 9) [] spec pos
-      parse_rs_flag_cap_c (sep:rest) spec   pos      =  parse_rs_inline_cap_c sep rest spec pos
+fn :: parse rs flag cap c [String] RsSpec [String] => RsSpec
+      parse rs flag cap c [] spec pos = parse rs inline cap c (char from code 9) [] spec pos
+      parse rs flag cap c (sep:rest) spec pos = parse rs inline cap c sep rest spec pos
 
-fn :: parse_rs_flag_g [String] RsSpec [String] => RsSpec
-      parse_rs_flag_g []       spec   pos      =  assign_rs_pos pos spec
-      parse_rs_flag_g (g:rest) spec   pos      =  parse_rs_inline_g g rest spec pos
+fn :: parse rs flag g [String] RsSpec [String] => RsSpec
+      parse rs flag g [] spec pos = assign rs pos pos spec
+      parse rs flag g (g:rest) spec pos = parse rs inline g g rest spec pos
 
-fn :: parse_rs_inline_g String [String] RsSpec [String] => RsSpec
-      parse_rs_inline_g g      rest     spec   pos      =
-        parse_rs_loop rest (spec with r_gutter: str_to_int g) pos
+fn :: parse rs inline g String [String] RsSpec [String] => RsSpec
+      parse rs inline g g rest spec pos = parse rs loop rest (spec with r_gutter = (str to int g)) pos
 
-fn :: parse_rs_flag_w [String] RsSpec [String] => RsSpec
-      parse_rs_flag_w []       spec   pos      =  assign_rs_pos pos spec
-      parse_rs_flag_w (w:rest) spec   pos      =  parse_rs_inline_w w rest spec pos
+fn :: parse rs flag w [String] RsSpec [String] => RsSpec
+      parse rs flag w [] spec pos = assign rs pos pos spec
+      parse rs flag w (w:rest) spec pos = parse rs inline w w rest spec pos
 
-fn :: parse_rs_inline_w String [String] RsSpec [String] => RsSpec
-      parse_rs_inline_w w      rest     spec   pos      =
-        parse_rs_loop rest (spec with r_width: str_to_int w) pos
+fn :: parse rs inline w String [String] RsSpec [String] => RsSpec
+      parse rs inline w w rest spec pos = parse rs loop rest (spec with r_width = (str to int w)) pos
 
-fn :: parse_rs_flag_k [String] RsSpec [String] => RsSpec
-      parse_rs_flag_k []       spec   pos      =  assign_rs_pos pos spec
-      parse_rs_flag_k (k:rest) spec   pos      =  parse_rs_inline_k k rest spec pos
+fn :: parse rs flag k [String] RsSpec [String] => RsSpec
+      parse rs flag k [] spec pos = assign rs pos pos spec
+      parse rs flag k (k:rest) spec pos = parse rs inline k k rest spec pos
 
-fn :: parse_rs_inline_k String [String] RsSpec [String] => RsSpec
-      parse_rs_inline_k k      rest     spec   pos      =
-        parse_rs_loop rest (spec with r_skip_lines: str_to_int k) pos
+fn :: parse rs inline k String [String] RsSpec [String] => RsSpec
+      parse rs inline k k rest spec pos = parse rs loop rest (spec with r_skip_lines = (str to int k)) pos
 
-fn :: parse_rs_inline_c String [String] RsSpec [String] => RsSpec
-      parse_rs_inline_c sep    rest     spec   pos      =
-        parse_rs_loop rest (spec with r_in_sep: sep) pos
+fn :: parse rs inline c String [String] RsSpec [String] => RsSpec
+      parse rs inline c sep rest spec pos = parse rs loop rest (spec with r_in_sep = sep) pos
 
-fn :: parse_rs_inline_cap_c String [String] RsSpec [String] => RsSpec
-      parse_rs_inline_cap_c sep    rest     spec   pos      =
-        parse_rs_loop rest (spec with r_out_sep: sep, r_has_out_sep: True) pos
+fn :: parse rs inline cap c String [String] RsSpec [String] => RsSpec
+      parse rs inline cap c sep rest spec pos = parse rs loop rest (spec with r_out_sep = sep, r_has_out_sep = True) pos
 
-fn :: assign_rs_pos [String]     RsSpec => RsSpec
-      assign_rs_pos []           spec   =  spec
-      assign_rs_pos (p1:[])      spec   =
-        | is_digits_only p1 = spec with r_rows: str_to_int p1, r_cols: 0, r_files: []
-        | otherwise = spec with r_files: [p1]
-      assign_rs_pos (p1:p2:rest) spec   =
-        | (is_digits_only p1) and (is_digits_only p2) = spec with r_rows: str_to_int p1, r_cols: str_to_int p2, r_files: rest
-        | is_digits_only p1 = spec with r_rows: str_to_int p1, r_cols: 0, r_files: [p2] :: rest
-        | otherwise = spec with r_files: [p1, p2] :: rest
+fn :: assign rs pos [String]     RsSpec => RsSpec
+      assign rs pos []           spec   =  spec
+      assign rs pos (p1:[])      spec   =
+        | is digits only p1 = spec with r_rows = (str to int p1), r_cols = 0, r_files = []
+        | otherwise = spec with r_files = [p1]
+      assign rs pos (p1:p2:rest) spec   =
+        | (is digits only p1) and (is digits only p2) = spec with r_rows = (str to int p1), r_cols = (str to int p2), r_files = rest
+        | is digits only p1 = spec with r_rows = (str to int p1), r_cols = 0, r_files = ([p2] :: rest)
+        | otherwise = spec with r_files = ([p1, p2] :: rest)
 
-fn :: ceil_div Int Int => Int
-      ceil_div n   d   =
+fn :: ceil div Int Int => Int
+      ceil div n   d   =
         | d <= 0 = 1
         | n <= 0 = 0
         | otherwise = ((n + d - 1) / d)
 
-fn :: max_item_len [String] Int  => Int
-      max_item_len []       best =  best
-      max_item_len (x:xs)   best =  max_item_len xs (max_int best (str_len x))
+fn :: max item len [String] Int  => Int
+      max item len []       best =  best
+      max item len (x:xs)   best =  max item len xs (max int best (str len x))
 
-fn :: infer_rs_dims [String] Int Int Int Int Int => (Int, Int)
-      infer_rs_dims items total r c width gutter =
+fn :: infer rs dims [String] Int Int Int Int Int => Int Int
+      infer rs dims items total r c width gutter =
         | total <= 0 = (0, 0)
         | (r > 0) and (c > 0) = (r, c)
-        | (r <= 0) and (c > 0) = (ceil_div total c, c)
-        | (r > 0) and (c <= 0) = (r, ceil_div total r)
-        | width > 0 = infer_rs_width_dims items total width gutter
+        | (r <= 0) and (c > 0) = (ceil div total c, c)
+        | (r > 0) and (c <= 0) = (r, ceil div total r)
+        | width > 0 = infer rs width dims items total width gutter
         | otherwise = (1, total)
 
-fn :: infer_rs_width_dims [String] Int   Int   Int    => (Int, Int)
-      infer_rs_width_dims items    total width gutter =
-        m_len = max_int 1 (max_item_len items 0)
-        fit_cols = max_int 1 ((width + gutter) / (m_len + gutter))
-        cols = min_int total fit_cols
-        (ceil_div total cols, cols)
+fn :: infer rs width dims [String] Int Int Int => Int Int
+      infer rs width dims items total width gutter =
+        m_len = max int 1 (max item len items 0)
+        fit_cols = max int 1 ((width + gutter) / (m_len + gutter))
+        cols = min int total fit_cols
+        (ceil div total cols, cols)
 
-fn :: grid_cell_index Int Int Int Int Bool => Int
-      grid_cell_index orig_rows orig_cols r c False = (r * orig_cols) + c
-      grid_cell_index orig_rows orig_cols r c True = (c * orig_cols) + r
+fn :: grid cell index Int Int Int Int Bool => Int
+      grid cell index orig_rows orig_cols r c False = (r * orig_cols) + c
+      grid cell index orig_rows orig_cols r c True = (c * orig_cols) + r
 
-fn :: grid_cell [String] Int Int Int Int Int Bool Bool => String
-      grid_cell items total orig_rows orig_cols r c trans recycle =
-        idx = grid_cell_index orig_rows orig_cols r c trans
-        resolve_grid_item items total idx recycle
+fn :: grid cell [String] Int Int Int Int Int Bool Bool => String
+      grid cell items total orig_rows orig_cols r c trans recycle =
+        idx = grid cell index orig_rows orig_cols r c trans
+        resolve grid item items total idx recycle
 
-fn :: resolve_grid_item [String] Int   Int Bool  => String
-      resolve_grid_item items    total idx False =  str_list_nth items idx
-      resolve_grid_item items    total idx True  =
+fn :: resolve grid item [String] Int Int Bool => String
+      resolve grid item items total idx False = str list nth items idx
+      resolve grid item items total idx True =
         | total <= 0 = ""
-        | otherwise = str_list_nth items (idx % total)
+        | otherwise = str list nth items (idx % total)
 
-fn :: max_col_width [String] Int Int Int Int Int Int Bool Bool Int => Int
-      max_col_width items total orig_rows orig_cols out_rows c row_idx trans recycle best =
+fn :: max col width [String] Int Int Int Int Int Int Bool Bool Int => Int
+      max col width items total orig_rows orig_cols out_rows c row_idx trans recycle best =
         | row_idx >= out_rows = best
         | otherwise =
-          cell = grid_cell items total orig_rows orig_cols row_idx c trans recycle
-          w = str_len cell
-          next_best = max_int best w
-          (max_col_width items total orig_rows orig_cols out_rows c (row_idx + 1) trans recycle next_best)
+          cell = grid cell items total orig_rows orig_cols row_idx c trans recycle
+          w = str len cell
+          next_best = max int best w
+          (max col width items total orig_rows orig_cols out_rows c (row_idx + 1) trans recycle next_best)
 
-fn :: compute_col_widths [String] Int Int Int Int Int Int Bool Bool [Int] => [Int]
-      compute_col_widths items total orig_rows orig_cols out_rows out_cols c trans recycle acc =
+fn :: compute col widths [String] Int Int Int Int Int Int Bool Bool [Int] => [Int]
+      compute col widths items total orig_rows orig_cols out_rows out_cols c trans recycle acc =
         | c >= out_cols = acc
         | otherwise =
-          w = max_col_width items total orig_rows orig_cols out_rows c 0 trans recycle 0
-          (compute_col_widths items total orig_rows orig_cols out_rows out_cols (c + 1) trans recycle (acc :: [w]))
+          w = max col width items total orig_rows orig_cols out_rows c 0 trans recycle 0
+          (compute col widths items total orig_rows orig_cols out_rows out_cols (c + 1) trans recycle (acc :: [w]))
 
-fn :: row_active_cols Int Int Int Int Int Bool Bool Int Int => Int
-      row_active_cols total orig_rows orig_cols r out_cols trans True c last_valid = out_cols
-      row_active_cols total orig_rows orig_cols r out_cols trans False c last_valid =
+fn :: row active cols Int Int Int Int Int Bool Bool Int Int => Int
+      row active cols total orig_rows orig_cols r out_cols trans True c last_valid = out_cols
+      row active cols total orig_rows orig_cols r out_cols trans False c last_valid =
         | c >= out_cols = last_valid + 1
-        | (grid_cell_index orig_rows orig_cols r c trans) < total = row_active_cols total orig_rows orig_cols r out_cols trans False (c + 1) c
-        | otherwise = row_active_cols total orig_rows orig_cols r out_cols trans False (c + 1) last_valid
+        | (grid cell index orig_rows orig_cols r c trans) < total = row active cols total orig_rows orig_cols r out_cols trans False (c + 1) c
+        | otherwise = row active cols total orig_rows orig_cols r out_cols trans False (c + 1) last_valid
 
-fn :: format_rs_cell String Int Bool Bool Bool => String
-      format_rs_cell cell width right_align squeeze is_last =
+fn :: format rs cell String Int Bool Bool Bool => String
+      format rs cell cell width right_align squeeze is_last =
         | squeeze = cell
-        | right_align = pad_left cell width
+        | right_align = pad left cell width
         | is_last = cell
-        | otherwise = pad_right cell width
+        | otherwise = pad right cell width
 
-fn :: render_rs_row [String] Int Int Int Int Int Bool [Int] RsSpec Int [String] => String
-      render_rs_row items total orig_rows orig_cols r active_cols trans widths spec c acc =
-        | c >= active_cols = join_rs_cells acc spec
+fn :: render rs row [String] Int Int Int Int Int Bool [Int] RsSpec Int [String] => String
+      render rs row items total orig_rows orig_cols r active_cols trans widths spec c acc =
+        | c >= active_cols = join rs cells acc spec
         | otherwise =
-          raw_cell = grid_cell items total orig_rows orig_cols r c trans (r_recycle spec)
-          col_w = int_list_nth widths c
+          raw_cell = grid cell items total orig_rows orig_cols r c trans (r_recycle spec)
+          col_w = int list nth widths c
           is_last = (c + 1) >= active_cols
-          formatted = format_rs_cell raw_cell col_w (r_right_align spec) (r_squeeze spec) (is_last or (r_has_out_sep spec))
-          (render_rs_row items total orig_rows orig_cols r active_cols trans widths spec (c + 1) (acc :: [formatted]))
+          formatted = format rs cell raw_cell col_w (r_right_align spec) (r_squeeze spec) (is_last or (r_has_out_sep spec))
+          (render rs row items total orig_rows orig_cols r active_cols trans widths spec (c + 1) (acc :: [formatted]))
 
-fn :: join_rs_cells [String] RsSpec => String
-      join_rs_cells cells    spec   =
-        | r_has_out_sep spec = join_with cells (r_out_sep spec)
-        | otherwise = join_with cells (repeat_str " " (r_gutter spec))
+fn :: join rs cells [String] RsSpec => String
+      join rs cells cells    spec   =
+        | r_has_out_sep spec = join with cells (r_out_sep spec)
+        | otherwise = join with cells (repeat str " " (r_gutter spec))
 
-fn :: render_rs_rows [String] Int Int Int Int Int Int Bool [Int] RsSpec [String] => [String]
-      render_rs_rows items total orig_rows orig_cols out_rows out_cols r trans widths spec acc =
+fn :: render rs rows [String] Int Int Int Int Int Int Bool [Int] RsSpec [String] => [String]
+      render rs rows items total orig_rows orig_cols out_rows out_cols r trans widths spec acc =
         | r >= out_rows = acc
         | otherwise =
-          active_cols = row_active_cols total orig_rows orig_cols r out_cols trans (r_recycle spec) 0 (0 - 1)
-          row_str = render_rs_row items total orig_rows orig_cols r active_cols trans widths spec 0 []
-          (render_rs_rows items total orig_rows orig_cols out_rows out_cols (r + 1) trans widths spec (acc :: [row_str]))
+          active_cols = row active cols total orig_rows orig_cols r out_cols trans (r_recycle spec) 0 (0 - 1)
+          row_str = render rs row items total orig_rows orig_cols r active_cols trans widths spec 0 []
+          (render rs rows items total orig_rows orig_cols out_rows out_cols (r + 1) trans widths spec (acc :: [row_str]))
 
-fn :: preprocess_rs_lines String Int    => String
-      preprocess_rs_lines raw    skip_n =
+fn :: preprocess rs lines String Int    => String
+      preprocess rs lines raw    skip_n =
         | skip_n <= 0 = raw
-        | otherwise = join_with (drop_str_list (split lines raw) skip_n) (char_from_code 10)
+        | otherwise = join with (drop str list (split lines raw) skip_n) (char from code 10)
 
-fn :: tokenize_rs_input String RsSpec => [String]
-      tokenize_rs_input raw    spec   =
-        trimmed = preprocess_rs_lines raw (r_skip_lines spec)
-        tokenize_rs_trimmed trimmed spec
+fn :: tokenize rs input String RsSpec => [String]
+      tokenize rs input raw    spec   =
+        trimmed = preprocess rs lines raw (r_skip_lines spec)
+        tokenize rs trimmed trimmed spec
 
-fn :: tokenize_rs_trimmed String  RsSpec => [String]
-      tokenize_rs_trimmed trimmed spec   =
+fn :: tokenize rs trimmed String  RsSpec => [String]
+      tokenize rs trimmed trimmed spec   =
         | r_line_entries spec = split lines trimmed
-        | (str_len (r_in_sep spec)) > 0 = split_char_loop trimmed 0 (str_len trimmed) (str_char_at (r_in_sep spec) 0) "" []
+        | (str len (r_in_sep spec)) > 0 = split char loop trimmed 0 (str len trimmed) (str char at (r_in_sep spec) 0) "" []
         | otherwise = split whitespace trimmed
 
 op :: reshape text String with RsSpec => String
       reshape text raw    with spec   =
-        items = tokenize_rs_input raw spec
-        total = list_len items
-        dims = infer_rs_dims items total (r_rows spec) (r_cols spec) (r_width spec) (r_gutter spec)
+        items = tokenize rs input raw spec
+        total = list len items
+        dims = infer rs dims items total (r_rows spec) (r_cols spec) (r_width spec) (r_gutter spec)
         orig_rows = fst dims
         orig_cols = snd dims
-        out_dims = select_out_dims orig_rows orig_cols (r_transpose spec)
+        out_dims = select out dims orig_rows orig_cols (r_transpose spec)
         out_rows = fst out_dims
         out_cols = snd out_dims
-        render_rs_or_shape items total orig_rows orig_cols out_rows out_cols spec
+        render rs or shape items total orig_rows orig_cols out_rows out_cols spec
 
-fn :: render_rs_or_shape [String] Int Int Int Int Int RsSpec => String
-      render_rs_or_shape items total orig_rows orig_cols out_rows out_cols spec =
-        | r_shape_only spec = (int_to_str out_rows) + " by " + (int_to_str out_cols)
-        | otherwise = render_rs_full_grid items total orig_rows orig_cols out_rows out_cols spec
+fn :: render rs or shape [String] Int Int Int Int Int RsSpec => String
+      render rs or shape items total orig_rows orig_cols out_rows out_cols spec =
+        | r_shape_only spec = (int to str out_rows) + " by " + (int to str out_cols)
+        | otherwise = render rs full grid items total orig_rows orig_cols out_rows out_cols spec
 
-fn :: render_rs_full_grid [String] Int Int Int Int Int RsSpec => String
-      render_rs_full_grid items total orig_rows orig_cols out_rows out_cols spec =
-        widths = compute_col_widths items total orig_rows orig_cols out_rows out_cols 0 (r_transpose spec) (r_recycle spec) []
-        rows = render_rs_rows items total orig_rows orig_cols out_rows out_cols 0 (r_transpose spec) widths spec []
-        join_with rows (char_from_code 10)
+fn :: render rs full grid [String] Int Int Int Int Int RsSpec => String
+      render rs full grid items total orig_rows orig_cols out_rows out_cols spec =
+        widths = compute col widths items total orig_rows orig_cols out_rows out_cols 0 (r_transpose spec) (r_recycle spec) []
+        rows = render rs rows items total orig_rows orig_cols out_rows out_cols 0 (r_transpose spec) widths spec []
+        join with rows (char from code 10)
 
-fn :: select_out_dims Int Int Bool  => (Int, Int)
-      select_out_dims r   c   False =  (r, c)
-      select_out_dims r   c   True  =  (c, r)
+fn :: select out dims Int Int Bool => Int Int
+      select out dims r c False = (r, c)
+      select out dims r c True = (c, r)
 
 -- ============================================================================
 -- 3. BSD lam(1) — FR-FILTER-002
 -- ============================================================================
 
-fn :: parse_min_max String => (Int, Int)
-      parse_min_max spec   =  parse_min_max_loop spec 0 (str_len spec) ""
+fn :: parse min max String => Int Int
+      parse min max spec   =  parse min max loop spec 0 (str len spec) ""
 
-fn :: parse_min_max_loop String Int Int String => (Int, Int)
-      parse_min_max_loop s      idx len left   =
-        | idx >= len = (parse_opt_int left, 0)
-        | (str_char_at s idx) == 46 = (parse_opt_int left, parse_opt_int (str_slice s (idx + 1) len))
-        | otherwise = parse_min_max_loop s (idx + 1) len (left + (str_slice s idx (idx + 1)))
+fn :: parse min max loop String Int Int String => Int Int
+      parse min max loop s idx len left =
+        | idx >= len = (parse opt int left, 0)
+        | (str char at s idx) == 46 = (parse opt int left, parse opt int (str slice s (idx + 1) len))
+        | otherwise = parse min max loop s (idx + 1) len (left + (str slice s idx (idx + 1)))
 
-fn :: parse_opt_int String => Int
-      parse_opt_int s      =
-        | (str_len s) == 0 = 0
+fn :: parse opt int String => Int
+      parse opt int s      =
+        | (str len s) == 0 = 0
         | s == "-" = 0
-        | otherwise = parse_signed_int s
+        | otherwise = parse signed int s
 
-fn :: format_lam_cell String Int   Int   => String
-      format_lam_cell s      min_w max_w =
-        truncated = truncate_lam s max_w
-        pad_lam truncated min_w
+fn :: format lam cell String Int Int => String
+      format lam cell s min_w max_w =
+        truncated = truncate lam s max_w
+        pad lam truncated min_w
 
-fn :: truncate_lam String Int   => String
-      truncate_lam s      max_w =
-        | (max_w > 0) and ((str_len s) > max_w) = str_slice s 0 max_w
+fn :: truncate lam String Int   => String
+      truncate lam s      max_w =
+        | (max_w > 0) and ((str len s) > max_w) = str slice s 0 max_w
         | otherwise = s
 
-fn :: pad_lam String Int   => String
-      pad_lam s      min_w =
-        | min_w > 0 = pad_left s min_w
-        | min_w < 0 = pad_right s (0 - min_w)
+fn :: pad lam String Int   => String
+      pad lam s      min_w =
+        | min_w > 0 = pad left s min_w
+        | min_w < 0 = pad right s (0 - min_w)
         | otherwise = s
 
-fn :: max_lam_lines [LamCol]   Int  => Int
-      max_lam_lines []         best =  best
-      max_lam_lines (col:rest) best =
-        n = list_len (l_lines col)
-        max_lam_lines rest (max_int best n)
+fn :: max lam lines [LamCol]   Int  => Int
+      max lam lines []         best =  best
+      max lam lines (col:rest) best =
+        n = list len (l_lines col)
+        max lam lines rest (max int best n)
 
-fn :: render_lam_line [LamCol]   Int     String    => String
-      render_lam_line []         row_idx trail_sep =  trail_sep
-      render_lam_line (col:rest) row_idx trail_sep =
-        in_bounds = row_idx < (list_len (l_lines col))
-        raw_line = str_list_nth (l_lines col) row_idx
-        cell_body = select_lam_cell_body in_bounds (l_pad_eof col) raw_line (l_min col) (l_max col)
+fn :: render lam line [LamCol] Int String => String
+      render lam line [] row_idx trail_sep = trail_sep
+      render lam line (col:rest) row_idx trail_sep =
+        in_bounds = row_idx < (list len (l_lines col))
+        raw_line = str list nth (l_lines col) row_idx
+        cell_body = select lam cell body in_bounds (l_pad_eof col) raw_line (l_min col) (l_max col)
         cell = (l_sep col) + cell_body
-        cell + (render_lam_line rest row_idx trail_sep)
+        cell + (render lam line rest row_idx trail_sep)
 
-fn :: select_lam_cell_body Bool Bool String Int Int => String
-      select_lam_cell_body True pad_eof raw_line min_w max_w = format_lam_cell raw_line min_w max_w
-      select_lam_cell_body False True raw_line min_w max_w = format_lam_cell "" min_w max_w
-      select_lam_cell_body False False raw_line min_w max_w = format_lam_cell "" min_w max_w
+fn :: select lam cell body Bool Bool String Int Int => String
+      select lam cell body True pad_eof raw_line min_w max_w = format lam cell raw_line min_w max_w
+      select lam cell body False True raw_line min_w max_w = format lam cell "" min_w max_w
+      select lam cell body False False raw_line min_w max_w = format lam cell "" min_w max_w
 
-fn :: render_lam_all [LamCol] Int Int String [String] => [String]
-      render_lam_all cols row_idx total_rows trail_sep acc =
+fn :: render lam all [LamCol] Int Int String [String] => [String]
+      render lam all cols row_idx total_rows trail_sep acc =
         | row_idx >= total_rows = acc
         | otherwise =
-          line = render_lam_line cols row_idx trail_sep
-          (render_lam_all cols (row_idx + 1) total_rows trail_sep (acc :: [line]))
+          line = render lam line cols row_idx trail_sep
+          (render lam all cols (row_idx + 1) total_rows trail_sep (acc :: [line]))
 
 op :: laminate columns [LamCol] with String    => String
       laminate columns cols     with trail_sep =
-        total_rows = max_lam_lines cols 0
-        lines = render_lam_all cols 0 total_rows trail_sep []
-        join_with lines (char_from_code 10)
+        total_rows = max lam lines cols 0
+        lines = render lam all cols 0 total_rows trail_sep []
+        join with lines (char from code 10)
 
-op :: parse lam args [String] => ([LamCol], String)
-      parse lam args args     =  parse_lam_loop args "" "" 0 0 0 0 False False 10 10 []
+op :: parse lam args [String] => [LamCol] String
+      parse lam args args     =  parse lam loop args "" "" 0 0 0 0 False False 10 10 []
 
-fn :: parse_lam_loop [String] String String Int Int Int Int Bool Bool Int Int [LamCol] => ([LamCol], String)
-      parse_lam_loop [] cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc = (acc, select_nonempty cur_s def_s)
-      parse_lam_loop (arg:rest) cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
-        | arg == "-s" = parse_lam_flag_s rest False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | arg == "-S" = parse_lam_flag_s rest True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | arg == "-f" = parse_lam_flag_f rest False False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | arg == "-F" = parse_lam_flag_f rest True False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | arg == "-p" = parse_lam_flag_f rest False True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | arg == "-P" = parse_lam_flag_f rest True True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | arg == "-t" = parse_lam_flag_t rest False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | arg == "-T" = parse_lam_flag_t rest True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | str_starts_with arg "-s" = parse_lam_loop rest (str_slice arg 2 (str_len arg)) def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | str_starts_with arg "-S" = parse_lam_loop rest (str_slice arg 2 (str_len arg)) (str_slice arg 2 (str_len arg)) cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | str_starts_with arg "-f" = parse_lam_inline_f (str_slice arg 2 (str_len arg)) rest False False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | str_starts_with arg "-F" = parse_lam_inline_f (str_slice arg 2 (str_len arg)) rest True False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | str_starts_with arg "-p" = parse_lam_inline_f (str_slice arg 2 (str_len arg)) rest False True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | str_starts_with arg "-P" = parse_lam_inline_f (str_slice arg 2 (str_len arg)) rest True True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | str_starts_with arg "-t" = parse_lam_inline_t (str_slice arg 2 (str_len arg)) rest False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | str_starts_with arg "-T" = parse_lam_inline_t (str_slice arg 2 (str_len arg)) rest True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-        | otherwise = parse_lam_file arg rest cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+fn :: parse lam loop [String] String String Int Int Int Int Bool Bool Int Int [LamCol] => [LamCol] String
+      parse lam loop [] cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc = (acc, select nonempty cur_s def_s)
+      parse lam loop (arg:rest) cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
+        | arg == "-s" = parse lam flag s rest False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | arg == "-S" = parse lam flag s rest True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | arg == "-f" = parse lam flag f rest False False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | arg == "-F" = parse lam flag f rest True False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | arg == "-p" = parse lam flag f rest False True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | arg == "-P" = parse lam flag f rest True True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | arg == "-t" = parse lam flag t rest False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | arg == "-T" = parse lam flag t rest True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | str starts with arg "-s" = parse lam loop rest (str slice arg 2 (str len arg)) def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | str starts with arg "-S" = parse lam loop rest (str slice arg 2 (str len arg)) (str slice arg 2 (str len arg)) cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | str starts with arg "-f" = parse lam inline f (str slice arg 2 (str len arg)) rest False False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | str starts with arg "-F" = parse lam inline f (str slice arg 2 (str len arg)) rest True False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | str starts with arg "-p" = parse lam inline f (str slice arg 2 (str len arg)) rest False True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | str starts with arg "-P" = parse lam inline f (str slice arg 2 (str len arg)) rest True True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | str starts with arg "-t" = parse lam inline t (str slice arg 2 (str len arg)) rest False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | str starts with arg "-T" = parse lam inline t (str slice arg 2 (str len arg)) rest True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+        | otherwise = parse lam file arg rest cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
 
-fn :: select_nonempty String String => String
-      select_nonempty a      b      =
-        | (str_len a) > 0 = a
+fn :: select nonempty String String => String
+      select nonempty a      b      =
+        | (str len a) > 0 = a
         | otherwise = b
 
-fn :: parse_lam_flag_s [String] Bool String String Int Int Int Int Bool Bool Int Int [LamCol] => ([LamCol], String)
-      parse_lam_flag_s [] persist cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc = (acc, select_nonempty cur_s def_s)
-      parse_lam_flag_s (sep:rest) False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
-        parse_lam_loop rest sep def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
-      parse_lam_flag_s (sep:rest) True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
-        parse_lam_loop rest sep sep cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+fn :: parse lam flag s [String] Bool String String Int Int Int Int Bool Bool Int Int [LamCol] => [LamCol] String
+      parse lam flag s [] persist cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc = (acc, select nonempty cur_s def_s)
+      parse lam flag s (sep:rest) False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
+        parse lam loop rest sep def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+      parse lam flag s (sep:rest) True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
+        parse lam loop rest sep sep cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
 
-fn :: parse_lam_flag_f [String] Bool Bool String String Int Int Int Int Bool Bool Int Int [LamCol] => ([LamCol], String)
-      parse_lam_flag_f [] persist pad_eof cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc = (acc, select_nonempty cur_s def_s)
-      parse_lam_flag_f (mm:rest) persist pad_eof cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
-        parse_lam_inline_f mm rest persist pad_eof cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+fn :: parse lam flag f [String] Bool Bool String String Int Int Int Int Bool Bool Int Int [LamCol] => [LamCol] String
+      parse lam flag f [] persist pad_eof cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc = (acc, select nonempty cur_s def_s)
+      parse lam flag f (mm:rest) persist pad_eof cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
+        parse lam inline f mm rest persist pad_eof cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
 
-fn :: parse_lam_inline_f String [String] Bool Bool String String Int Int Int Int Bool Bool Int Int [LamCol] => ([LamCol], String)
-      parse_lam_inline_f mm rest False pad_eof cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
-        bounds = parse_min_max mm
-        parse_lam_loop rest cur_s def_s (fst bounds) (snd bounds) def_min def_max pad_eof def_p cur_t def_t acc
-      parse_lam_inline_f mm rest True pad_eof cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
-        bounds = parse_min_max mm
+fn :: parse lam inline f String [String] Bool Bool String String Int Int Int Int Bool Bool Int Int [LamCol] => [LamCol] String
+      parse lam inline f mm rest False pad_eof cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
+        bounds = parse min max mm
+        parse lam loop rest cur_s def_s (fst bounds) (snd bounds) def_min def_max pad_eof def_p cur_t def_t acc
+      parse lam inline f mm rest True pad_eof cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
+        bounds = parse min max mm
         b1 = fst bounds
         b2 = snd bounds
-        parse_lam_loop rest cur_s def_s b1 b2 b1 b2 pad_eof pad_eof cur_t def_t acc
+        parse lam loop rest cur_s def_s b1 b2 b1 b2 pad_eof pad_eof cur_t def_t acc
 
-fn :: parse_lam_flag_t [String] Bool String String Int Int Int Int Bool Bool Int Int [LamCol] => ([LamCol], String)
-      parse_lam_flag_t [] persist cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc = (acc, select_nonempty cur_s def_s)
-      parse_lam_flag_t (tc:rest) persist cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
-        parse_lam_inline_t tc rest persist cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
+fn :: parse lam flag t [String] Bool String String Int Int Int Int Bool Bool Int Int [LamCol] => [LamCol] String
+      parse lam flag t [] persist cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc = (acc, select nonempty cur_s def_s)
+      parse lam flag t (tc:rest) persist cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
+        parse lam inline t tc rest persist cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc
 
-fn :: parse_lam_inline_t String [String] Bool String String Int Int Int Int Bool Bool Int Int [LamCol] => ([LamCol], String)
-      parse_lam_inline_t tc rest False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
-        code = char_at_or tc 0 10
-        parse_lam_loop rest cur_s def_s cur_min cur_max def_min def_max cur_p def_p code def_t acc
-      parse_lam_inline_t tc rest True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
-        code = char_at_or tc 0 10
-        parse_lam_loop rest cur_s def_s cur_min cur_max def_min def_max cur_p def_p code code acc
+fn :: parse lam inline t String [String] Bool String String Int Int Int Int Bool Bool Int Int [LamCol] => [LamCol] String
+      parse lam inline t tc rest False cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
+        code = char at or tc 0 10
+        parse lam loop rest cur_s def_s cur_min cur_max def_min def_max cur_p def_p code def_t acc
+      parse lam inline t tc rest True cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
+        code = char at or tc 0 10
+        parse lam loop rest cur_s def_s cur_min cur_max def_min def_max cur_p def_p code code acc
 
 fn :: read stdin chunk String String => String
       read stdin chunk acc    ""     =  acc
@@ -964,232 +958,231 @@ fn :: read stdin loop String => String
 fn :: read stdin all => String
       read stdin all =  read stdin loop ""
 
-fn :: read_lam_file String => String
-      read_lam_file path   =
+fn :: read lam file String => String
+      read lam file path   =
         | path == "-" = read stdin all
-        | otherwise = read_file path
+        | otherwise = read file path
 
-fn :: parse_lam_file String [String] String String Int Int Int Int Bool Bool Int Int [LamCol] => ([LamCol], String)
-      parse_lam_file path rest cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
-        content = read_lam_file path
-        lines = split_lines_delim content 0 (str_len content) cur_t "" []
+fn :: parse lam file String [String] String String Int Int Int Int Bool Bool Int Int [LamCol] => [LamCol] String
+      parse lam file path rest cur_s def_s cur_min cur_max def_min def_max cur_p def_p cur_t def_t acc =
+        content = read lam file path
+        lines = split lines delim content 0 (str len content) cur_t "" []
         col = LamCol cur_s cur_min cur_max cur_p lines
-        parse_lam_loop rest def_s def_s def_min def_max def_min def_max def_p def_p def_t def_t (acc :: [col])
+        parse lam loop rest def_s def_s def_min def_max def_min def_max def_p def_p def_t def_t (acc :: [col])
 
 -- ============================================================================
 -- 4. BSD vis(1) & unvis(1) — FR-FILTER-002
 -- ============================================================================
 
-fn :: default_vis_spec => VisSpec
-      default_vis_spec =  VisSpec False True False False False False False False 0 []
+fn :: default vis spec => VisSpec
+      default vis spec =  VisSpec False True False False False False False False 0 []
 
 op :: parse vis args [String] => VisSpec
-      parse vis args args     =  parse_vis_loop args default_vis_spec
+      parse vis args args     =  parse vis loop args (default vis spec)
 
-fn :: apply_vis_flag_char Int VisSpec => VisSpec
-      apply_vis_flag_char c   spec    =
-        | c == 111 = spec with v_octal: True
-        | c == 99 = spec with v_cstyle: True
-        | c == 116 = spec with v_tab: True
-        | c == 119 = spec with v_tab: True, v_space: True, v_newline: True
-        | c == 115 = spec with v_space: True
-        | c == 98 = spec with v_nobs: True
-        | c == 108 = spec with v_mark_nl: True
-        | c == 110 = spec with v_none: True
-        | c == 102 = spec with v_fold: 80
+fn :: apply vis flag char Int VisSpec => VisSpec
+      apply vis flag char c spec =
+        | c == 111 = spec with v_octal = True
+        | c == 99 = spec with v_cstyle = True
+        | c == 116 = spec with v_tab = True
+        | c == 119 = spec with v_tab = True, v_space = True, v_newline = True
+        | c == 115 = spec with v_space = True
+        | c == 98 = spec with v_nobs = True
+        | c == 108 = spec with v_mark_nl = True
+        | c == 110 = spec with v_none = True
+        | c == 102 = spec with v_fold = 80
         | otherwise = spec
 
-fn :: apply_vis_flags_str String Int Int VisSpec => VisSpec
-      apply_vis_flags_str s      idx len spec    =
+fn :: apply vis flags str String Int Int VisSpec => VisSpec
+      apply vis flags str s idx len spec =
         | idx >= len = spec
-        | otherwise = apply_vis_flags_str s (idx + 1) len (apply_vis_flag_char (str_char_at s idx) spec)
+        | otherwise = apply vis flags str s (idx + 1) len (apply vis flag char (str char at s idx) spec)
 
-fn :: parse_vis_loop [String]   VisSpec => VisSpec
-      parse_vis_loop []         spec    =  spec
-      parse_vis_loop (arg:rest) spec    =
-        | arg == "-F" = parse_vis_flag_fold rest spec
-        | (str_starts_with arg "-F") and ((str_len arg) > 2) = parse_vis_inline_fold (str_slice arg 2 (str_len arg)) rest spec
-        | (str_starts_with arg "-") and ((str_len arg) > 1) = parse_vis_loop rest (apply_vis_flags_str arg 1 (str_len arg) spec)
-        | otherwise = parse_vis_loop rest (spec with v_files: (v_files spec) :: [arg])
+fn :: parse vis loop [String]   VisSpec => VisSpec
+      parse vis loop []         spec    =  spec
+      parse vis loop (arg:rest) spec    =
+        | arg == "-F" = parse vis flag fold rest spec
+        | (str starts with arg "-F") and ((str len arg) > 2) = parse vis inline fold (str slice arg 2 (str len arg)) rest spec
+        | (str starts with arg "-") and ((str len arg) > 1) = parse vis loop rest (apply vis flags str arg 1 (str len arg) spec)
+        | otherwise = parse vis loop rest (spec with v_files = ((v_files spec) :: [arg]))
 
-fn :: parse_vis_flag_fold [String] VisSpec => VisSpec
-      parse_vis_flag_fold []       spec    =  spec
-      parse_vis_flag_fold (w:rest) spec    =  parse_vis_inline_fold w rest spec
+fn :: parse vis flag fold [String] VisSpec => VisSpec
+      parse vis flag fold [] spec = spec
+      parse vis flag fold (w:rest) spec = parse vis inline fold w rest spec
 
-fn :: parse_vis_inline_fold String [String] VisSpec => VisSpec
-      parse_vis_inline_fold w      rest     spec    =
-        parse_vis_loop rest (spec with v_fold: str_to_int w)
+fn :: parse vis inline fold String [String] VisSpec => VisSpec
+      parse vis inline fold w rest spec = parse vis loop rest (spec with v_fold = (str to int w))
 
 fn :: bslash => String
-      bslash =  char_from_code 92
+      bslash =  char from code 92
 
-fn :: vis_prefix VisSpec => String
-      vis_prefix spec    =
+fn :: vis prefix VisSpec => String
+      vis prefix spec    =
         | v_nobs spec = ""
         | otherwise = bslash
 
-fn :: to_octal_3 Int VisSpec => String
-      to_octal_3 c   spec    =
+fn :: to octal3 Int VisSpec => String
+      to octal3 c   spec    =
         d2 = (c / 64) % 8
         d1 = (c / 8) % 8
         d0 = c % 8
-        (vis_prefix spec) + (int_to_str d2) + (int_to_str d1) + (int_to_str d0)
+        (vis prefix spec) + (int to str d2) + (int to str d1) + (int to str d0)
 
-fn :: encode_vis_code Int VisSpec => String
-      encode_vis_code c   spec    =
+fn :: encode vis code Int VisSpec => String
+      encode vis code c   spec    =
         | (c == 92) and (v_nobs spec) = bslash
         | c == 92 = bslash + bslash
-        | v_none spec = char_from_code c
-        | (c == 9) and (not (v_tab spec)) = char_from_code 9
-        | (c == 9) and (v_octal spec) = to_octal_3 9 spec
-        | c == 9 = (vis_prefix spec) + "t"
-        | (c == 10) and (v_mark_nl spec) and (not (v_newline spec)) = (vis_prefix spec) + "$" + (char_from_code 10)
-        | (c == 10) and (not (v_newline spec)) = char_from_code 10
-        | (c == 10) and (v_octal spec) = to_octal_3 10 spec
-        | c == 10 = (vis_prefix spec) + "n"
+        | v_none spec = char from code c
+        | (c == 9) and (not (v_tab spec)) = char from code 9
+        | (c == 9) and (v_octal spec) = to octal3 9 spec
+        | c == 9 = (vis prefix spec) + "t"
+        | (c == 10) and (v_mark_nl spec) and (not (v_newline spec)) = (vis prefix spec) + "$" + (char from code 10)
+        | (c == 10) and (not (v_newline spec)) = char from code 10
+        | (c == 10) and (v_octal spec) = to octal3 10 spec
+        | c == 10 = (vis prefix spec) + "n"
         | (c == 32) and (not (v_space spec)) = " "
-        | (c == 32) and (v_octal spec) = to_octal_3 32 spec
-        | c == 32 = (vis_prefix spec) + "s"
-        | (c == 13) and (v_octal spec) = to_octal_3 13 spec
-        | c == 13 = (vis_prefix spec) + "r"
-        | (c == 8) and (v_octal spec) = to_octal_3 8 spec
-        | c == 8 = (vis_prefix spec) + "b"
-        | (c == 7) and (v_octal spec) = to_octal_3 7 spec
-        | c == 7 = (vis_prefix spec) + "a"
-        | (c == 11) and (v_octal spec) = to_octal_3 11 spec
-        | c == 11 = (vis_prefix spec) + "v"
-        | (c == 12) and (v_octal spec) = to_octal_3 12 spec
-        | c == 12 = (vis_prefix spec) + "f"
-        | (c == 127) and (v_octal spec) = to_octal_3 127 spec
-        | c == 127 = (vis_prefix spec) + "^?"
-        | (c >= 0) and (c < 32) and (v_octal spec) = to_octal_3 c spec
-        | (c >= 0) and (c < 32) = (vis_prefix spec) + "^" + (char_from_code (c + 64))
-        | c >= 128 = to_octal_3 c spec
-        | otherwise = char_from_code c
+        | (c == 32) and (v_octal spec) = to octal3 32 spec
+        | c == 32 = (vis prefix spec) + "s"
+        | (c == 13) and (v_octal spec) = to octal3 13 spec
+        | c == 13 = (vis prefix spec) + "r"
+        | (c == 8) and (v_octal spec) = to octal3 8 spec
+        | c == 8 = (vis prefix spec) + "b"
+        | (c == 7) and (v_octal spec) = to octal3 7 spec
+        | c == 7 = (vis prefix spec) + "a"
+        | (c == 11) and (v_octal spec) = to octal3 11 spec
+        | c == 11 = (vis prefix spec) + "v"
+        | (c == 12) and (v_octal spec) = to octal3 12 spec
+        | c == 12 = (vis prefix spec) + "f"
+        | (c == 127) and (v_octal spec) = to octal3 127 spec
+        | c == 127 = (vis prefix spec) + "^?"
+        | (c >= 0) and (c < 32) and (v_octal spec) = to octal3 c spec
+        | (c >= 0) and (c < 32) = (vis prefix spec) + "^" + (char from code (c + 64))
+        | c >= 128 = to octal3 c spec
+        | otherwise = char from code c
 
-fn :: vis_encode_loop String Int Int VisSpec String => String
-      vis_encode_loop s idx len spec acc =
+fn :: vis encode loop String Int Int VisSpec String => String
+      vis encode loop s idx len spec acc =
         | idx >= len = acc
         | otherwise =
-          c = str_char_at s idx
-          (vis_encode_loop s (idx + 1) len spec (acc + (encode_vis_code c spec)))
+          c = str char at s idx
+          (vis encode loop s (idx + 1) len spec (acc + (encode vis code c spec)))
 
-fn :: fold_vis_lines String Int Int Int Int String => String
-      fold_vis_lines s idx len max_col cur_col acc =
+fn :: fold vis lines String Int Int Int Int String => String
+      fold vis lines s idx len max_col cur_col acc =
         | idx >= len = acc
-        | (str_char_at s idx) == 10 = fold_vis_lines s (idx + 1) len max_col 0 (acc + (char_from_code 10))
-        | (cur_col + 1) >= max_col = fold_vis_lines s idx len max_col 0 (acc + bslash + (char_from_code 10))
-        | otherwise = fold_vis_lines s (idx + 1) len max_col (cur_col + 1) (acc + (str_slice s idx (idx + 1)))
+        | (str char at s idx) == 10 = fold vis lines s (idx + 1) len max_col 0 (acc + (char from code 10))
+        | (cur_col + 1) >= max_col = fold vis lines s idx len max_col 0 (acc + bslash + (char from code 10))
+        | otherwise = fold vis lines s (idx + 1) len max_col (cur_col + 1) (acc + (str slice s idx (idx + 1)))
 
 op :: vis encode String with VisSpec => String
       vis encode s      with spec    =
-        encoded = vis_encode_loop s 0 (str_len s) spec ""
-        apply_vis_fold encoded (v_fold spec)
+        encoded = vis encode loop s 0 (str len s) spec ""
+        apply vis fold encoded (v_fold spec)
 
-fn :: apply_vis_fold String  Int    => String
-      apply_vis_fold encoded fold_w =
+fn :: apply vis fold String  Int    => String
+      apply vis fold encoded fold_w =
         | fold_w <= 1 = encoded
-        | otherwise = fold_vis_lines encoded 0 (str_len encoded) fold_w 0 ""
+        | otherwise = fold vis lines encoded 0 (str len encoded) fold_w 0 ""
 
-fn :: is_octal_digit Int => Bool
-      is_octal_digit c   =  (c >= 48) and (c <= 55)
+fn :: is octal digit Int => Bool
+      is octal digit c   =  (c >= 48) and (c <= 55)
 
-fn :: hex_val Int => Int
-      hex_val c   =
+fn :: hex val Int => Int
+      hex val c   =
         | (c >= 48) and (c <= 57) = c - 48
         | (c >= 65) and (c <= 70) = c - 55
         | (c >= 97) and (c <= 102) = c - 87
         | otherwise = 0 - 1
 
-fn :: is_hex_digit Int => Bool
-      is_hex_digit c   =  (hex_val c) >= 0
+fn :: is hex digit Int => Bool
+      is hex digit c   =  (hex val c) >= 0
 
-fn :: decode_c_escape Int => String
-      decode_c_escape c   =
-        | c == 110 = char_from_code 10
-        | c == 116 = char_from_code 9
-        | c == 114 = char_from_code 13
-        | c == 98 = char_from_code 8
-        | c == 97 = char_from_code 7
-        | c == 118 = char_from_code 11
-        | c == 102 = char_from_code 12
+fn :: decode c escape Int => String
+      decode c escape c   =
+        | c == 110 = char from code 10
+        | c == 116 = char from code 9
+        | c == 114 = char from code 13
+        | c == 98 = char from code 8
+        | c == 97 = char from code 7
+        | c == 118 = char from code 11
+        | c == 102 = char from code 12
         | c == 115 = " "
-        | c == 69 = char_from_code 27
-        | c == 92 = char_from_code 92
+        | c == 69 = char from code 27
+        | c == 92 = char from code 92
         | c == 36 = ""
         | c == 10 = ""
-        | otherwise = char_from_code c
+        | otherwise = char from code c
 
-fn :: decode_ctrl_code Int => Int
-      decode_ctrl_code c   =
+fn :: decode ctrl code Int => Int
+      decode ctrl code c   =
         | c == 63 = 127
         | otherwise = c - 64
 
-fn :: decode_ctrl_char Int => String
-      decode_ctrl_char c   =  char_from_code (decode_ctrl_code c)
+fn :: decode ctrl char Int => String
+      decode ctrl char c   =  char from code (decode ctrl code c)
 
-fn :: unvis_loop String Int Int String => String
-      unvis_loop s      idx len acc    =
+fn :: unvis loop String Int Int String => String
+      unvis loop s idx len acc =
         | idx >= len = acc
-        | ((str_char_at s idx) == 92) and ((idx + 1) < len) = unvis_after_bslash s idx len acc
-        | otherwise = unvis_loop s (idx + 1) len (acc + (str_slice s idx (idx + 1)))
+        | ((str char at s idx) == 92) and ((idx + 1) < len) = unvis after bslash s idx len acc
+        | otherwise = unvis loop s (idx + 1) len (acc + (str slice s idx (idx + 1)))
 
-fn :: unvis_after_bslash String Int Int String => String
-      unvis_after_bslash s      idx len acc    =
-        | ((str_char_at s (idx + 1)) == 94) and ((idx + 2) < len) = unvis_loop s (idx + 3) len (acc + (decode_ctrl_char (str_char_at s (idx + 2))))
-        | ((str_char_at s (idx + 1)) == 77) and ((idx + 3) < len) and ((str_char_at s (idx + 2)) == 45) = unvis_loop s (idx + 4) len (acc + (char_from_code (128 + (str_char_at s (idx + 3)))))
-        | ((str_char_at s (idx + 1)) == 77) and ((idx + 3) < len) and ((str_char_at s (idx + 2)) == 94) = unvis_loop s (idx + 4) len (acc + (char_from_code (128 + (decode_ctrl_code (str_char_at s (idx + 3))))))
-        | ((str_char_at s (idx + 1)) == 120) and ((idx + 3) < len) and (is_hex_digit (str_char_at s (idx + 2))) and (is_hex_digit (str_char_at s (idx + 3))) = unvis_hex_2 s idx len acc
-        | is_octal_digit (str_char_at s (idx + 1)) = unvis_octal_var s idx len acc
-        | otherwise = unvis_loop s (idx + 2) len (acc + (decode_c_escape (str_char_at s (idx + 1))))
+fn :: unvis after bslash String Int Int String => String
+      unvis after bslash s idx len acc =
+        | ((str char at s (idx + 1)) == 94) and ((idx + 2) < len) = unvis loop s (idx + 3) len (acc + (decode ctrl char (str char at s (idx + 2))))
+        | ((str char at s (idx + 1)) == 77) and ((idx + 3) < len) and ((str char at s (idx + 2)) == 45) = unvis loop s (idx + 4) len (acc + (char from code (128 + (str char at s (idx + 3)))))
+        | ((str char at s (idx + 1)) == 77) and ((idx + 3) < len) and ((str char at s (idx + 2)) == 94) = unvis loop s (idx + 4) len (acc + (char from code (128 + (decode ctrl code (str char at s (idx + 3))))))
+        | ((str char at s (idx + 1)) == 120) and ((idx + 3) < len) and (is hex digit (str char at s (idx + 2))) and (is hex digit (str char at s (idx + 3))) = unvis hex2 s idx len acc
+        | is octal digit (str char at s (idx + 1)) = unvis octal var s idx len acc
+        | otherwise = unvis loop s (idx + 2) len (acc + (decode c escape (str char at s (idx + 1))))
 
-fn :: unvis_hex_2 String Int Int String => String
-      unvis_hex_2 s      idx len acc    =
-        h1 = hex_val (str_char_at s (idx + 2))
-        h0 = hex_val (str_char_at s (idx + 3))
-        unvis_loop s (idx + 4) len (acc + (char_from_code ((h1 * 16) + h0)))
+fn :: unvis hex2 String Int Int String => String
+      unvis hex2 s idx len acc =
+        h1 = hex val (str char at s (idx + 2))
+        h0 = hex val (str char at s (idx + 3))
+        unvis loop s (idx + 4) len (acc + (char from code ((h1 * 16) + h0)))
 
-fn :: unvis_octal_var String Int Int String => String
-      unvis_octal_var s      idx len acc    =
-        | ((idx + 3) < len) and (is_octal_digit (str_char_at s (idx + 2))) and (is_octal_digit (str_char_at s (idx + 3))) = unvis_octal_3 s idx len acc
-        | ((idx + 2) < len) and (is_octal_digit (str_char_at s (idx + 2))) = unvis_octal_2 s idx len acc
-        | otherwise = unvis_octal_1 s idx len acc
+fn :: unvis octal var String Int Int String => String
+      unvis octal var s idx len acc =
+        | ((idx + 3) < len) and (is octal digit (str char at s (idx + 2))) and (is octal digit (str char at s (idx + 3))) = unvis octal3 s idx len acc
+        | ((idx + 2) < len) and (is octal digit (str char at s (idx + 2))) = unvis octal2 s idx len acc
+        | otherwise = unvis octal1 s idx len acc
 
-fn :: unvis_octal_3 String Int Int String => String
-      unvis_octal_3 s      idx len acc    =
-        d2 = (str_char_at s (idx + 1)) - 48
-        d1 = (str_char_at s (idx + 2)) - 48
-        d0 = (str_char_at s (idx + 3)) - 48
+fn :: unvis octal3 String Int Int String => String
+      unvis octal3 s idx len acc =
+        d2 = (str char at s (idx + 1)) - 48
+        d1 = (str char at s (idx + 2)) - 48
+        d0 = (str char at s (idx + 3)) - 48
         code = (d2 * 64) + (d1 * 8) + d0
-        unvis_loop s (idx + 4) len (acc + (char_from_code code))
+        unvis loop s (idx + 4) len (acc + (char from code code))
 
-fn :: unvis_octal_2 String Int Int String => String
-      unvis_octal_2 s      idx len acc    =
-        d1 = (str_char_at s (idx + 1)) - 48
-        d0 = (str_char_at s (idx + 2)) - 48
+fn :: unvis octal2 String Int Int String => String
+      unvis octal2 s idx len acc =
+        d1 = (str char at s (idx + 1)) - 48
+        d0 = (str char at s (idx + 2)) - 48
         code = (d1 * 8) + d0
-        unvis_loop s (idx + 3) len (acc + (char_from_code code))
+        unvis loop s (idx + 3) len (acc + (char from code code))
 
-fn :: unvis_octal_1 String Int Int String => String
-      unvis_octal_1 s      idx len acc    =
-        d0 = (str_char_at s (idx + 1)) - 48
-        unvis_loop s (idx + 2) len (acc + (char_from_code d0))
+fn :: unvis octal1 String Int Int String => String
+      unvis octal1 s idx len acc =
+        d0 = (str char at s (idx + 1)) - 48
+        unvis loop s (idx + 2) len (acc + (char from code d0))
 
 op :: unvis decode String => String
-      unvis decode s      =  unvis_loop s 0 (str_len s) ""
+      unvis decode s      =  unvis loop s 0 (str len s) ""
 
-fn :: vis_encode_bytes_loop [Int]    VisSpec String => String
-      vis_encode_bytes_loop []       spec    acc    =  acc
-      vis_encode_bytes_loop (b:rest) spec    acc    =
-        vis_encode_bytes_loop rest spec (acc + (encode_vis_code b spec))
+fn :: vis encode bytes loop [Int] VisSpec String => String
+      vis encode bytes loop [] spec acc = acc
+      vis encode bytes loop (b:rest) spec acc =
+        vis encode bytes loop rest spec (acc + (encode vis code b spec))
 
 op :: vis encode bytes [Int] with VisSpec => String
       vis encode bytes bs    with spec    =
-        encoded = vis_encode_bytes_loop bs spec ""
-        apply_vis_fold encoded (v_fold spec)
+        encoded = vis encode bytes loop bs spec ""
+        apply vis fold encoded (v_fold spec)
 
-fn :: decode_c_escape_bytes Int => [Int]
-      decode_c_escape_bytes c   =
+fn :: decode c escape bytes Int => [Int]
+      decode c escape bytes c   =
         | c == 110 = [10]
         | c == 116 = [9]
         | c == 114 = [13]
@@ -1204,52 +1197,52 @@ fn :: decode_c_escape_bytes Int => [Int]
         | c == 10 = []
         | otherwise = [c]
 
-fn :: unvis_bytes_loop String Int Int [Int] => [Int]
-      unvis_bytes_loop s      idx len acc   =
+fn :: unvis bytes loop String Int Int [Int] => [Int]
+      unvis bytes loop s idx len acc =
         | idx >= len = acc
-        | ((str_char_at s idx) == 92) and ((idx + 1) < len) = unvis_bytes_after_bslash s idx len acc
-        | otherwise = unvis_bytes_loop s (idx + 1) len (acc :: [str_char_at s idx])
+        | ((str char at s idx) == 92) and ((idx + 1) < len) = unvis bytes after bslash s idx len acc
+        | otherwise = unvis bytes loop s (idx + 1) len (acc :: [str char at s idx])
 
-fn :: unvis_bytes_after_bslash String Int Int [Int] => [Int]
-      unvis_bytes_after_bslash s      idx len acc   =
-        | ((str_char_at s (idx + 1)) == 94) and ((idx + 2) < len) = unvis_bytes_loop s (idx + 3) len (acc :: [decode_ctrl_code (str_char_at s (idx + 2))])
-        | ((str_char_at s (idx + 1)) == 77) and ((idx + 3) < len) and ((str_char_at s (idx + 2)) == 45) = unvis_bytes_loop s (idx + 4) len (acc :: [128 + (str_char_at s (idx + 3))])
-        | ((str_char_at s (idx + 1)) == 77) and ((idx + 3) < len) and ((str_char_at s (idx + 2)) == 94) = unvis_bytes_loop s (idx + 4) len (acc :: [128 + (decode_ctrl_code (str_char_at s (idx + 3)))])
-        | ((str_char_at s (idx + 1)) == 120) and ((idx + 3) < len) and (is_hex_digit (str_char_at s (idx + 2))) and (is_hex_digit (str_char_at s (idx + 3))) = unvis_bytes_hex_2 s idx len acc
-        | is_octal_digit (str_char_at s (idx + 1)) = unvis_bytes_octal_var s idx len acc
-        | otherwise = unvis_bytes_loop s (idx + 2) len (acc :: (decode_c_escape_bytes (str_char_at s (idx + 1))))
+fn :: unvis bytes after bslash String Int Int [Int] => [Int]
+      unvis bytes after bslash s idx len acc =
+        | ((str char at s (idx + 1)) == 94) and ((idx + 2) < len) = unvis bytes loop s (idx + 3) len (acc :: [decode ctrl code (str char at s (idx + 2))])
+        | ((str char at s (idx + 1)) == 77) and ((idx + 3) < len) and ((str char at s (idx + 2)) == 45) = unvis bytes loop s (idx + 4) len (acc :: [128 + (str char at s (idx + 3))])
+        | ((str char at s (idx + 1)) == 77) and ((idx + 3) < len) and ((str char at s (idx + 2)) == 94) = unvis bytes loop s (idx + 4) len (acc :: [128 + (decode ctrl code (str char at s (idx + 3)))])
+        | ((str char at s (idx + 1)) == 120) and ((idx + 3) < len) and (is hex digit (str char at s (idx + 2))) and (is hex digit (str char at s (idx + 3))) = unvis bytes hex2 s idx len acc
+        | is octal digit (str char at s (idx + 1)) = unvis bytes octal var s idx len acc
+        | otherwise = unvis bytes loop s (idx + 2) len (acc :: (decode c escape bytes (str char at s (idx + 1))))
 
-fn :: unvis_bytes_hex_2 String Int Int [Int] => [Int]
-      unvis_bytes_hex_2 s      idx len acc   =
-        h1 = hex_val (str_char_at s (idx + 2))
-        h0 = hex_val (str_char_at s (idx + 3))
-        unvis_bytes_loop s (idx + 4) len (acc :: [(h1 * 16) + h0])
+fn :: unvis bytes hex2 String Int Int [Int] => [Int]
+      unvis bytes hex2 s idx len acc =
+        h1 = hex val (str char at s (idx + 2))
+        h0 = hex val (str char at s (idx + 3))
+        unvis bytes loop s (idx + 4) len (acc :: [(h1 * 16) + h0])
 
-fn :: unvis_bytes_octal_var String Int Int [Int] => [Int]
-      unvis_bytes_octal_var s      idx len acc   =
-        | ((idx + 3) < len) and (is_octal_digit (str_char_at s (idx + 2))) and (is_octal_digit (str_char_at s (idx + 3))) = unvis_bytes_octal_3 s idx len acc
-        | ((idx + 2) < len) and (is_octal_digit (str_char_at s (idx + 2))) = unvis_bytes_octal_2 s idx len acc
-        | otherwise = unvis_bytes_octal_1 s idx len acc
+fn :: unvis bytes octal var String Int Int [Int] => [Int]
+      unvis bytes octal var s idx len acc =
+        | ((idx + 3) < len) and (is octal digit (str char at s (idx + 2))) and (is octal digit (str char at s (idx + 3))) = unvis bytes octal3 s idx len acc
+        | ((idx + 2) < len) and (is octal digit (str char at s (idx + 2))) = unvis bytes octal2 s idx len acc
+        | otherwise = unvis bytes octal1 s idx len acc
 
-fn :: unvis_bytes_octal_3 String Int Int [Int] => [Int]
-      unvis_bytes_octal_3 s      idx len acc   =
-        d2 = (str_char_at s (idx + 1)) - 48
-        d1 = (str_char_at s (idx + 2)) - 48
-        d0 = (str_char_at s (idx + 3)) - 48
+fn :: unvis bytes octal3 String Int Int [Int] => [Int]
+      unvis bytes octal3 s idx len acc =
+        d2 = (str char at s (idx + 1)) - 48
+        d1 = (str char at s (idx + 2)) - 48
+        d0 = (str char at s (idx + 3)) - 48
         code = (d2 * 64) + (d1 * 8) + d0
-        unvis_bytes_loop s (idx + 4) len (acc :: [code])
+        unvis bytes loop s (idx + 4) len (acc :: [code])
 
-fn :: unvis_bytes_octal_2 String Int Int [Int] => [Int]
-      unvis_bytes_octal_2 s      idx len acc   =
-        d1 = (str_char_at s (idx + 1)) - 48
-        d0 = (str_char_at s (idx + 2)) - 48
+fn :: unvis bytes octal2 String Int Int [Int] => [Int]
+      unvis bytes octal2 s idx len acc =
+        d1 = (str char at s (idx + 1)) - 48
+        d0 = (str char at s (idx + 2)) - 48
         code = (d1 * 8) + d0
-        unvis_bytes_loop s (idx + 3) len (acc :: [code])
+        unvis bytes loop s (idx + 3) len (acc :: [code])
 
-fn :: unvis_bytes_octal_1 String Int Int [Int] => [Int]
-      unvis_bytes_octal_1 s      idx len acc   =
-        d0 = (str_char_at s (idx + 1)) - 48
-        unvis_bytes_loop s (idx + 2) len (acc :: [d0])
+fn :: unvis bytes octal1 String Int Int [Int] => [Int]
+      unvis bytes octal1 s idx len acc =
+        d0 = (str char at s (idx + 1)) - 48
+        unvis bytes loop s (idx + 2) len (acc :: [d0])
 
 op :: unvis decode bytes String => [Int]
-      unvis decode bytes s      =  unvis_bytes_loop s 0 (str_len s) []
+      unvis decode bytes s      =  unvis bytes loop s 0 (str len s) []

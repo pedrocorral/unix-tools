@@ -1,7 +1,6 @@
 -- unvis/main.rg — BSD unvis(1) visual character decoder
 -- @implements FR-FILTER-002
 
-import posix
 import filter_lib
 
 fn :: drop prog [String]    => [String]

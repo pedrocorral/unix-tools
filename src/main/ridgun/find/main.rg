@@ -1,7 +1,6 @@
 -- find/main.rg — BSD find(1) directory tree boolean evaluator in Pure Ridgun
 -- @implements FR-FS-002
 
-import posix
 import fs_lib
 
 fn :: drop prog [String]    => [String]

@@ -1,8 +1,8 @@
 # unix-tools
 
-A collection of **17 classic BSD and Unix userland utilities** written in 100% pure **Ridgun** (`v0.9.5` PAL) and compiled directly to standalone native Linux `x86_64` ELF64 executables with zero C, Rust, or `libc` runtime dependencies.
+A collection of **17 classic BSD and Unix userland utilities** written in 100% pure **Ridgun** (`v0.9.17` PAL) and compiled directly to standalone native Linux `x86_64` ELF64 executables with zero C, Rust, or `libc` runtime dependencies.
 
-All utilities operate over POSIX file descriptors and system calls provided by `ridgun-libs` (`posix.rglib`, `io.rglib`, `crypto.rglib`, and `socket.rglib`).
+All utilities operate over POSIX file descriptors and system calls provided by `/home/boogie/ridgun/libs` (`posix.rglib`, `io.rglib`, `crypto.rglib`, and `socket.rglib`).
 
 ---
 
@@ -278,8 +278,8 @@ Computes FIPS 180-4 SHA-256 digests, RFC 2104 HMAC-SHA256 authentication tags, a
 This project is managed by **`stable`** (`build.rg`), Ridgun's self-hosted build orchestrator, dependency manager, parallel type-checker, canonical tabular formatter, and test runner.
 
 ### Prerequisites
-- `stable` and `ridgunc` (`v0.9.5` PAL) in `PATH`.
-- `ridgun-libs` available at `/home/boogie/ridgun-libs`.
+- `stable` and `ridgunc` (`v0.9.17` PAL) in `PATH`.
+- Ridgun standard libraries available at `/home/boogie/ridgun/libs`.
 
 ### 1. Inspect Project & Custom Tasks
 ```sh
@@ -293,9 +293,10 @@ Run the custom `sync libs` task defined in `build.rg` to compile and install the
 stable sync libs
 ```
 
-### 3. Compile All 17 Native ELF64 Binaries
-Build every discovered utility in `src/main/ridgun/<tool>/main.rg` into `target/` (or pass a single target name such as `stable built mktemp`):
+### 3. Compile All 17 Native ELF64 Binaries (Strict Mode)
+Build every discovered utility in `src/main/ridgun/<tool>/main.rg` into `target/` using `ridgunc build --strict` via the custom `strict binaries` task (or use `stable built` / `stable built mktemp`):
 ```sh
+stable strict binaries
 stable built
 ```
 

@@ -1,8 +1,6 @@
 -- timeout/main.rg — BSD timeout(1) command execution deadline utility in Pure Ridgun
 -- @implements FR-PROC-003
 
-import io
-import socket
 import proc_lib
 
 fn :: drop prog [String] => [String]

@@ -1,7 +1,6 @@
 -- rs/main.rg — BSD rs(1) 2D data array reshaper
 -- @implements FR-FILTER-001
 
-import posix
 import filter_lib
 
 fn :: drop prog [String]    => [String]

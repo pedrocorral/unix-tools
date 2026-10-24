@@ -1,7 +1,6 @@
 -- lam/main.rg — BSD lam(1) file laminator
 -- @implements FR-FILTER-002
 
-import posix
 import filter_lib
 
 fn :: drop prog [String]    => [String]

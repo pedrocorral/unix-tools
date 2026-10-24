@@ -4,8 +4,6 @@
 -- @tests TS-PROC-003
 
 import test
-import io
-import socket
 import proc_lib
 
 fn :: test apply suite => ()
@@ -120,8 +118,8 @@ fn :: test pal io suite => ()
         _ = sys unlink "/tmp/ut_pal_io.txt"
         assert true (not (file exists "/tmp/ut_pal_io.txt")) "PAL posix/io: sys unlink removes file"
 
-fn :: test timeout and nc suite => ()
-      test timeout and nc suite =
+fn :: test timeout nc suite => ()
+      test timeout nc suite =
         nl = char from code 10
         tab = char from code 9
         _ = echo "=== 6. Testing BSD timeout(1) & nc(1) with io/socket Libraries (TS-PROC-003) ==="
@@ -171,5 +169,5 @@ fn :: main => ()
         _ = test sh suite
         _ = test proc e2e suite
         _ = test pal io suite
-        _ = test timeout and nc suite
+        _ = test timeout nc suite
         echo "All 63 Tier 3 BSD Process, Build, PAL I/O & Socket (apply, make, sh, timeout, nc) assertions passed!"

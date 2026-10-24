@@ -1,7 +1,6 @@
 -- mktemp/main.rg — BSD mktemp(1) temporary file and directory creator in Pure Ridgun
 -- @implements FR-FS-004
 
-import posix
 import fs_lib
 
 fn :: drop prog [String] => [String]

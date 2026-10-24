@@ -3,8 +3,6 @@
 -- @tests TS-SEC-003
 
 import test
-import posix
-import crypto
 import sec_lib
 
 fn :: unwrap rules DoasParseResult  => [DoasRule]
@@ -49,7 +47,7 @@ fn :: test doas policy suite => ()
         _ = assert equals (format doas audit d5) "permit" "AC2: cmd without 'args' keyword allows any arguments"
         d6 = evaluate doas rules rules for "pedro" in ["users"] as "root" running "/sbin/reboot" with ["now"]
         _ = assert equals (format doas audit d6) "deny" "AC2: cmd with empty 'args' keyword rejects non-empty arguments"
-        env_rule = (dummy rule) with dr_action: ActPermit, dr_nopass: True, dr_setenv: ["-USER", "CUSTOM=42"], dr_ident: "pedro"
+        env_rule = (dummy rule) with dr_action = ActPermit, dr_nopass = True, dr_setenv = ["-USER", "CUSTOM=42"], dr_ident = "pedro"
         san_env = build doas env env_rule for "pedro" as "root"
         _ = assert true (list contains str san_env "DOAS_USER=pedro") "doas env sets DOAS_USER=pedro"
         _ = assert true (list contains str san_env "CUSTOM=42") "doas setenv adds CUSTOM=42"

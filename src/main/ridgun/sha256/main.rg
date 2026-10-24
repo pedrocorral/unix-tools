@@ -1,8 +1,6 @@
 -- sha256/main.rg — BSD sha256(1) cryptographic digest, HMAC-SHA256 & Argon2id utility in Pure Ridgun
 -- @implements FR-SEC-002
 
-import posix
-import crypto
 import sec_lib
 
 fn :: drop prog [String] => [String]
@@ -20,7 +18,7 @@ fn :: read sha stdin loop String => String
 fn :: read stdin if needed Sha256Spec => String
       read stdin if needed spec       =
         | sh_has_str spec                        = ""
-        | (sec_str_list_len (sh_files spec)) > 0 = ""
+        | (sec str list len (sh_files spec)) > 0 = ""
         | otherwise                              = read sha stdin loop ""
 
 fn :: finish sha256 (Int, String) => ()

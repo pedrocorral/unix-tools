@@ -1,8 +1,6 @@
 -- doas/main.rg — OpenBSD doas(1) dedicated privilege escalation & config auditor in Pure Ridgun
 -- @implements FR-SEC-001
 
-import posix
-import crypto
 import sec_lib
 
 fn :: drop prog [String]    => [String]

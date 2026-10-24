@@ -167,26 +167,23 @@ op :: parse mdrr args [String] => MdSpec
 fn :: parse mdrr loop [String]   MdSpec => MdSpec
       parse mdrr loop []         spec   =  spec
       parse mdrr loop (arg:rest) spec   =
-        | (arg == "-p") or (arg == "--plain") or (arg == "--no-color") = (parse mdrr loop rest (spec with md_plain: True))
-        | (arg == "-a") or (arg == "--ascii")                          = (parse mdrr loop rest (spec with md_ascii: True))
-        | (arg == "-n") or (arg == "--line-numbers")                   = (parse mdrr loop rest (spec with md_line_nums: True))
-        | (arg == "-t") or (arg == "--toc")                            = (parse mdrr loop rest (spec with md_toc_only: True))
-        | (arg == "-H") or (arg == "--no-frontmatter")                 = (parse mdrr loop rest (spec with md_no_frontmatter: True))
+        | (arg == "-p") or (arg == "--plain") or (arg == "--no-color") = (parse mdrr loop rest (spec with md_plain = True))
+        | (arg == "-a") or (arg == "--ascii")                          = (parse mdrr loop rest (spec with md_ascii = True))
+        | (arg == "-n") or (arg == "--line-numbers")                   = (parse mdrr loop rest (spec with md_line_nums = True))
+        | (arg == "-t") or (arg == "--toc")                            = (parse mdrr loop rest (spec with md_toc_only = True))
+        | (arg == "-H") or (arg == "--no-frontmatter")                 = (parse mdrr loop rest (spec with md_no_frontmatter = True))
         | (arg == "-w") or (arg == "--width")                          = parse mdrr width rest spec
         | (arg == "-s") or (arg == "--section")                        = parse mdrr section rest spec
-        | arg == "--"                                                  = spec with md_files: (md_files spec) :: rest
-        | otherwise                                                    = (parse mdrr loop rest (spec with md_files: (md_files spec) :: [arg]))
+        | arg == "--"                                                  = spec with md_files = (md_files spec) :: rest
+        | otherwise                                                    = (parse mdrr loop rest (spec with md_files = (md_files spec) :: [arg]))
 
 fn :: parse mdrr width [String] MdSpec => MdSpec
       parse mdrr width []       spec   =  spec
-      parse mdrr width (w:rest) spec   =
-        w_val = max int 20 (str to int w)
-        parse mdrr loop rest (spec with md_width: w_val)
+      parse mdrr width (w:rest) spec   =  parse mdrr loop rest (spec with md_width = (max int 20 (str to int w)))
 
 fn :: parse mdrr section [String]   MdSpec => MdSpec
       parse mdrr section []         spec   =  spec
-      parse mdrr section (sec:rest) spec   =
-        parse mdrr loop rest (spec with md_section: sec)
+      parse mdrr section (sec:rest) spec   =  parse mdrr loop rest (spec with md_section = sec)
 
 -- ============================================================================
 -- 2. ANSI SGR Styling & Visible Display Width Measurement
@@ -352,7 +349,7 @@ fn :: prepend frontmatter Bool [String] [String] [String] => [MdBlock]
       prepend frontmatter True fm_lines rem _ =
         [BFrontMatter fm_lines] :: (parse blocks loop rem [] [])
 
-fn :: collect frontmatter [String]    [String] => ([String], Bool, [String])
+fn :: collect frontmatter [String]    [String] => [String] Bool [String]
       collect frontmatter []          acc      =  (acc, False, [])
       collect frontmatter (line:rest) acc      =
         | ((trim ws line) == "---") or ((trim ws line) == "...") = (acc, True, rest)
@@ -390,7 +387,7 @@ fn :: parse blocks loop [String] [String] [MdBlock] => [MdBlock]
 fn :: is fence start String => Bool
       is fence start t      =  (str_starts_with t "```") or (str_starts_with t "~~~")
 
-fn :: parse fenced code String [String] [String] => (MdBlock, [String])
+fn :: parse fenced code String [String] [String] => MdBlock [String]
       parse fenced code open_line [] acc =
         lang = trim ws (str slice open_line 3 (str len open_line))
         (BCode lang acc, [])
@@ -443,7 +440,7 @@ fn :: strip quote prefix String => String
         | str starts with t ">"  = str slice t 1 (str len t)
         | otherwise              = t
 
-fn :: collect blockquote [String]    [String] => ([String], [String])
+fn :: collect blockquote [String]    [String] => [String] [String]
       collect blockquote []          acc      =  (acc, [])
       collect blockquote (line:rest) acc      =
         | str starts with (trim ws line) ">" = (collect blockquote rest (acc :: [strip quote prefix (trim ws line)]))
@@ -553,7 +550,7 @@ fn :: parse col aligns [String] [ColAlign] => [ColAlign]
           | otherwise              = AlignLeft |.
         parse col aligns rest (acc :: [align])
 
-fn :: parse gfm table String      [String]        => (MdBlock, [String])
+fn :: parse gfm table String      [String]        => MdBlock [String]
       parse gfm table header_line []              =  (BTable (split table cells header_line) [] [], [])
       parse gfm table header_line (sep_line:rest) =
         || split table cells header_line                    -> headers
@@ -561,7 +558,7 @@ fn :: parse gfm table String      [String]        => (MdBlock, [String])
         || collect table rows rest []                       -> rows_res ||.
         (BTable headers aligns (fst rows_res), snd rows_res)
 
-fn :: collect table rows [String]    [[String]] => ([[String]], [String])
+fn :: collect table rows [String]    [[String]] => [[String]] [String]
       collect table rows []          acc        =  (acc, [])
       collect table rows (line:rest) acc        =
         | ((str len (trim ws line)) > 0) and (has pipe char (trim ws line)) =
@@ -734,7 +731,7 @@ fn :: highlight tokens loop String Int Int String String => String
           acc1 = acc + (flush ident tok cur_id) + (str slice s idx (idx + 1))
           (highlight tokens loop s (idx + 1) len "" acc1)
 
-fn :: read quoted literal String Int Int String => (String, Int)
+fn :: read quoted literal String Int Int String => String Int
       read quoted literal s idx len acc =
         | idx >= len                                        = (acc, len)
         | ((str char at s idx) == 92) and ((idx + 1) < len) = (read quoted literal s (idx + 2) len (acc + (str slice s idx (idx + 2))))
@@ -783,7 +780,7 @@ fn :: render blocks loop [MdBlock] MdSpec [String] => [String]
       render blocks loop (BHr:rest) spec acc =
         render blocks loop rest spec (acc :: [render hr spec])
 
-fn :: collect consecutive list [MdListEntry] [MdBlock] => ([MdListEntry], [MdBlock])
+fn :: collect consecutive list [MdListEntry] [MdBlock] => [MdListEntry] [MdBlock]
       collect consecutive list acc [] = (acc, [])
       collect consecutive list acc ((BListItem ind kind txt):rest) =
         collect consecutive list (acc :: [MdListEntry ind kind txt]) rest
@@ -890,18 +887,15 @@ fn :: format code prefix Int Bool String Bool => String
 
 -- ============================================================================
 -- 11. Blockquotes & GitHub Alerts (`NOTE`, `TIP`, `IMPORTANT`, `WARNING`, `CAUTION`)
---     Demonstrates FR-COMP-005 automatic fn :: clause merging before catch-all `_`
 -- ============================================================================
 
-fn :: alert color and title String Bool => (String, String)
+fn :: alert color and title String Bool => String String
       alert color and title "NOTE" ascii = ("34;1", (select box char ascii "[i] NOTE" "ℹ NOTE"))
       alert color and title "TIP" ascii = ("32;1", (select box char ascii "[*] TIP" "💡 TIP"))
       alert color and title "IMPORTANT" ascii = ("35;1", (select box char ascii "[!] IMPORTANT" "❗ IMPORTANT"))
-      alert color and title _ _ = ("2;37", "")
-
-fn :: alert color and title String Bool => (String, String)
       alert color and title "WARNING" ascii = ("33;1", (select box char ascii "[!] WARNING" "⚠ WARNING"))
       alert color and title "CAUTION" ascii = ("31;1", (select box char ascii "[X] CAUTION" "🛑 CAUTION"))
+      alert color and title _ _ = ("2;37", "")
 
 fn :: render quote block String [String] MdSpec => String
       render quote block kind lines spec =

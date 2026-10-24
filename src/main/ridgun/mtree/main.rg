@@ -1,7 +1,6 @@
 -- mtree/main.rg — BSD mtree(8) directory hierarchy mapper and verifier in Pure Ridgun
 -- @implements FR-FS-003
 
-import posix
 import fs_lib
 
 fn :: drop prog [String]    => [String]

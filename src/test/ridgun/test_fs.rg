@@ -5,7 +5,6 @@
 -- @tests TS-FS-004
 
 import test
-import posix
 import fs_lib
 
 fn :: test ls unit suite => ()

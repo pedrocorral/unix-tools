@@ -1,7 +1,6 @@
 -- ls/main.rg — BSD ls(1) directory listing utility in Pure Ridgun
 -- @implements FR-FS-001
 
-import posix
 import fs_lib
 
 fn :: drop prog [String]    => [String]
