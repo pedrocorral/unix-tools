@@ -172,10 +172,103 @@ fn :: test sha256 suite => ()
         _ = sys unlink "/tmp/ut_sha256_hmac.out"
         ()
 
+fn :: test doas upstream parse y => ()
+      test doas upstream parse y =
+        nl = char from code 10
+        bs = char from code 92
+        dq = char from code 34
+        _ = echo "=== 5. Upstream OpenBSD usr.bin/doas/parse.y Grammar & Lexer Regression Suite (TS-SEC-002) ==="
+        c_inline = "permit nopass :wheel # inline comment after rule" + nl + "permit alice as root cmd /bin/echo args " + dq + "hash # inside quotes" + dq + nl
+        p_inline = parse doas config c_inline
+        _ = assert true (is parse ok p_inline) "upstream parse.y: inline # comment after rule and literal # inside double quotes parse cleanly"
+        r_inline = unwrap rules p_inline
+        _ = assert int equals (list len r_inline) 2 "upstream parse.y: 2 rules extracted with inline comments"
+        d_hash = evaluate doas rules r_inline for "alice" in ["users"] as "root" running "/bin/echo" with ["hash # inside quotes"]
+        _ = assert str eq (format doas audit d_hash) "permit" "upstream parse.y: # inside double-quoted arg is preserved as part of argument"
+        c_esc = "permit nopass alice as root cmd /bin/echo args " + dq + "say " + bs + dq + "hi" + bs + dq + " " + bs + bs + " end" + dq + " " + dq + dq + nl
+        p_esc = parse doas config c_esc
+        _ = assert true (is parse ok p_esc) "upstream parse.y: escaped quotes \\\", escaped backslash \\\\, and empty quotes \"\" in args parse cleanly"
+        d_esc = evaluate doas rules (unwrap rules p_esc) for "alice" in [] as "root" running "/bin/echo" with ["say \"hi\" \\ end", ""]
+        _ = assert str eq (format doas audit d_esc) "permit nopass" "upstream parse.y: escaped quotes and empty string \"\" arg match exact argv"
+        d_esc_miss = evaluate doas rules (unwrap rules p_esc) for "alice" in [] as "root" running "/bin/echo" with ["say \"hi\" \\ end"]
+        _ = assert str eq (format doas audit d_esc_miss) "deny" "upstream parse.y: omitting trailing empty string \"\" arg is rejected"
+        c_kw_args = "permit nopass alice as root cmd /bin/echo args permit deny nopass as cmd args keepenv" + nl
+        p_kw_args = parse doas config c_kw_args
+        _ = assert true (is parse ok p_kw_args) "upstream parse.y: reserved keywords after 'args' are accepted as literal command arguments"
+        d_kw_args = evaluate doas rules (unwrap rules p_kw_args) for "alice" in [] as "root" running "/bin/echo" with ["permit", "deny", "nopass", "as", "cmd", "args", "keepenv"]
+        _ = assert str eq (format doas audit d_kw_args) "permit nopass" "upstream parse.y: command arguments containing reserved words match accurately"
+        c_multiline_err = "permit nopass " + bs + nl + "  keepenv " + bs + nl + "  :wheel" + nl + "invalid_directive_on_line_4" + nl
+        _ = assert int equals (parse err line (parse doas config c_multiline_err)) 4 "upstream parse.y: syntax error after 3-line backslash continuation reports physical line 4"
+        _ = assert int equals (parse err line (parse doas config ("permit setenv PATH alice" + nl))) 1 "upstream parse.y: missing '{' after setenv is rejected on line 1"
+        _ = assert int equals (parse err line (parse doas config ("permit alice as root as operator" + nl))) 1 "upstream parse.y: duplicate 'as' target clause is rejected"
+        _ = assert int equals (parse err line (parse doas config ("permit alice cmd /bin/ls as root" + nl))) 1 "upstream parse.y: 'as' clause after 'cmd' is rejected (must precede cmd)"
+        _ = assert int equals (parse err line (parse doas config ("permit alice cmd /bin/ls -l" + nl))) 1 "upstream parse.y: arguments after 'cmd <prog>' without 'args' keyword are rejected"
+        _ = assert int equals (parse err line (parse doas config ("permit as root" + nl))) 1 "upstream parse.y: reserved keyword 'as' in place of identity is rejected"
+        assert int equals (parse err line (parse doas config ("permit alice as cmd" + nl))) 1 "upstream parse.y: reserved keyword 'cmd' in place of target user is rejected"
+
+fn :: test doas upstream policy and env => ()
+      test doas upstream policy and env =
+        nl = char from code 10
+        _ = echo "=== 6. Upstream OpenBSD usr.bin/doas/ (doas.c, env.c) Policy, Env & Auth Regression Suite (TS-SEC-002) ==="
+        c_all_opts = "permit persist keepenv nolog nopass setenv \{ A=1 B=2 \} :wheel as operator cmd /usr/bin/id" + nl
+        p_all = parse doas config c_all_opts
+        _ = assert true (is parse ok p_all) "upstream parse.y: all options (persist keepenv nolog nopass setenv) in arbitrary order parse cleanly"
+        r0 = head rule (unwrap rules p_all)
+        _ = assert true ((dr_persist r0) and ((dr_keepenv r0) and ((dr_nolog r0) and (dr_nopass r0)))) "upstream parse.y: all boolean option flags set on parsed DoasRule"
+        cascade_cfg = "permit :wheel" + nl + "deny :builders as root" + nl + "permit nopass alice as root cmd /usr/bin/make" + nl + "deny alice as root cmd /usr/bin/make args clean" + nl + "permit nopass alice as root cmd /usr/bin/make args clean FORCE=1" + nl
+        c_rules = unwrap rules (parse doas config cascade_cfg)
+        _ = assert str eq (format doas audit (evaluate doas rules c_rules for "alice" in ["wheel", "builders"] as "root" running "/bin/ls" with [])) "deny" "upstream doas.c cascade: rule 2 (deny :builders) overrides rule 1 (permit :wheel)"
+        _ = assert str eq (format doas audit (evaluate doas rules c_rules for "alice" in ["wheel", "builders"] as "root" running "/usr/bin/make" with ["all"])) "permit nopass" "upstream doas.c cascade: rule 3 permits alice running /usr/bin/make all"
+        _ = assert str eq (format doas audit (evaluate doas rules c_rules for "alice" in ["wheel", "builders"] as "root" running "/usr/bin/make" with ["clean"])) "deny" "upstream doas.c cascade: rule 4 denies alice running /usr/bin/make clean"
+        _ = assert str eq (format doas audit (evaluate doas rules c_rules for "alice" in ["wheel", "builders"] as "root" running "/usr/bin/make" with ["clean", "FORCE=1"])) "permit nopass" "upstream doas.c cascade: rule 5 permits /usr/bin/make clean FORCE=1"
+        _ = sys setenv "CALLER_EXPORTED" "from_caller_env"
+        _ = sys setenv "SRC_TOKEN" "copied_via_dollar"
+        _ = sys setenv "UNSET_CALLER_VAR" ""
+        _ = sys setenv "IFS" " \t\n"
+        env_r = (dummy rule) with dr_action = ActPermit, dr_nopass = True, dr_setenv = ["CALLER_EXPORTED", "$SRC_TOKEN", "MAPPED=$SRC_TOKEN", "UNSET_CALLER_VAR", "DROPPED=$UNSET_CALLER_VAR", "-LOGNAME", "PATH=/custom/bin", "LD_PRELOAD=/evil.so", "IFS=:"], dr_ident = "alice"
+        built_env = build doas env env_r for "alice" as "operator"
+        _ = sys setenv "CALLER_EXPORTED" ""
+        _ = sys setenv "SRC_TOKEN" ""
+        _ = assert true (list contains str built_env "CALLER_EXPORTED=from_caller_env") "upstream env.c: bare VAR in setenv copies caller environment variable"
+        _ = assert true (list contains str built_env "SRC_TOKEN=copied_via_dollar") "upstream env.c: $VAR in setenv copies caller environment variable"
+        _ = assert true (list contains str built_env "MAPPED=copied_via_dollar") "upstream env.c: DST=$SRC in setenv assigns caller's SRC value to DST"
+        _ = assert false (list contains str built_env "UNSET_CALLER_VAR=") "upstream env.c: unset caller variable in setenv is omitted (not added as empty)"
+        _ = assert false (list contains str built_env "DROPPED=") "upstream env.c: DST=$UNSET in setenv omits/removes DST when source is unset"
+        _ = assert false (list contains str built_env "LOGNAME=operator") "upstream env.c: -LOGNAME in setenv removes default LOGNAME"
+        _ = assert true (list contains str built_env "PATH=/custom/bin") "upstream env.c: PATH=... in setenv overrides default PATH"
+        _ = assert false (list contains str built_env "LD_PRELOAD=/evil.so") "upstream env.c security (VUL-INJ-001): explicit LD_PRELOAD in setenv is stripped"
+        _ = assert false (list contains str built_env "IFS=:") "upstream env.c security (VUL-INJ-001): explicit IFS in setenv is stripped"
+        _ = sys setenv "SHELL" "/bin/zsh"
+        sp_sh1 = parse doas args ["-s", "-u", "operator"]
+        _ = assert str eq (d_cmd sp_sh1) "/bin/zsh" "upstream doas.c: doas -s selects $SHELL from environment when set"
+        _ = sys setenv "SHELL" ""
+        sp_sh2 = parse doas args ["-s"]
+        _ = assert str eq (d_cmd sp_sh2) "/bin/sh" "upstream doas.c: doas -s falls back to /bin/sh when $SHELL is empty"
+        sp_ddash = parse doas args ["-u", "root", "--", "-cmd_starting_with_dash", "-x"]
+        _ = assert str eq (d_cmd sp_ddash) "-cmd_starting_with_dash" "upstream doas.c: '--' stops option parsing and treats '-cmd...' as command"
+        r_arg_phc = evaluate sha256 (parse sha256 args ["-q", "--argon2id", "doassalt", "-s", "openbsd_pw"]) with ""
+        doas_phc = snd r_arg_phc
+        pw_rule = (dummy rule) with dr_action = ActPermit, dr_nopass = False, dr_ident = "alice"
+        pw_spec = parse doas args ["-u", "root", "/usr/bin/id"]
+        _ = sys setenv "DOAS_AUTH_PHC" doas_phc
+        _ = sys setenv "DOAS_PASS" "openbsd_pw"
+        _ = assert true (authenticate doas pw_rule pw_spec "alice") "upstream doas.c auth: Argon2id PHC verifier accepts matching password"
+        _ = sys setenv "DOAS_PASS" "wrong_openbsd_pw"
+        _ = assert false (authenticate doas pw_rule pw_spec "alice") "upstream doas.c auth: Argon2id PHC verifier rejects wrong password"
+        _ = sys setenv "DOAS_AUTH_PHC" ""
+        _ = sys setenv "DOAS_PASS" ""
+        ()
+
+fn :: head rule [DoasRule] => DoasRule
+      head rule []         =  dummy rule
+      head rule (r:_)      =  r
+
 fn :: main => ()
       main =
         _ = test doas parser suite
         _ = test doas policy suite
         _ = test doas e2e suite
         _ = test sha256 suite
-        echo "All 49 Tier 4 BSD Security (doas, doas.conf, sha256) unit & E2E assertions passed!"
+        _ = test doas upstream parse y
+        _ = test doas upstream policy and env
+        echo "All 88 Tier 4 & Upstream OpenBSD Security (doas, doas.conf, sha256) assertions passed!"

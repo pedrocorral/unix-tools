@@ -2406,18 +2406,45 @@ fn :: bool to status Bool  => Int
       bool to status True  =  0
       bool to status False =  1
 
-fn :: eval test expr [String]      => Bool
-      eval test expr []            =  False
-      eval test expr ("!":rest)    =  not (eval test expr rest)
-      eval test expr (x:[])        =  (str len x) > 0
-      eval test expr (op_s:arg:[]) =
-        | op_s == "-z" = (str len arg) == 0
-        | op_s == "-n" = (str len arg) > 0
-        | op_s == "-e" = file exists arg
-        | op_s == "-f" = is file arg
-        | op_s == "-d" = is dir arg
-        | otherwise    = False
-      eval test expr (a:op_s:b:_)  =
+fn :: find tok in list [String] String Int => Int
+      find tok in list [] _ _ = 0 - 1
+      find tok in list (x:xs) target idx =
+        | x == target = idx
+        | otherwise   = find tok in list xs target (idx + 1)
+
+fn :: take sh list Int [String] [String] => [String]
+      take sh list _ [] acc = acc
+      take sh list n (x:xs) acc =
+        | n <= 0    = acc
+        | otherwise = take sh list (n - 1) xs (acc :: [x])
+
+fn :: eval test expr [String] => Bool
+      eval test expr args     =
+        or_i = find tok in list args "-o" 0
+        and_i = find tok in list args "-a" 0
+        eval test compound args or_i and_i
+
+fn :: eval test compound [String] Int Int => Bool
+      eval test compound args or_i and_i =
+        | or_i > 0  = (eval test expr (take sh list or_i args [])) or (eval test expr (drop sh list (or_i + 1) args))
+        | and_i > 0 = (eval test expr (take sh list and_i args [])) and (eval test expr (drop sh list (and_i + 1) args))
+        | otherwise = eval test atom args
+
+fn :: eval test atom [String]      => Bool
+      eval test atom []            =  False
+      eval test atom ("!":rest)    =  not (eval test atom rest)
+      eval test atom (x:[])        =  (str len x) > 0
+      eval test atom (op_s:arg:[]) =
+        | op_s == "-z"                    = (str len arg) == 0
+        | op_s == "-n"                    = (str len arg) > 0
+        | (op_s == "-e") or (op_s == "-r") = file exists arg
+        | op_s == "-f"                    = is file arg
+        | op_s == "-d"                    = is dir arg
+        | op_s == "-s"                    = (file exists arg) and ((file size arg) > 0)
+        | (op_s == "-L") or (op_s == "-h") = is symlink arg
+        | op_s == "-x"                    = is executable file arg
+        | otherwise                       = False
+      eval test atom (a:op_s:b:_)  =
         | (op_s == "=") or (op_s == "==") = a == b
         | op_s == "!="                    = a != b
         | op_s == "-eq"                   = (str to int a) == (str to int b)

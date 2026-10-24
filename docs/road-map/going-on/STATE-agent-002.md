@@ -1,5 +1,5 @@
 ---
-active_task: TASK-0014
+active_task: none
 active_skill: core-session-handoff
 current_step:Completed TASK-0011 (Ridgun v0.9.17 grammar, strict checks & builds, and /home/boogie/ridgun/libs migration)
 open_blockers: []

@@ -124,22 +124,32 @@ fn :: ends with backslash String => Bool
         | (str char at s ((str len s) - 1)) == 92 = True
         | otherwise                               = False
 
-fn :: join doas cont [String] String Int [String] [Int] => [String] [Int]
-      join doas cont [] cur start_ln acc_l acc_n =
+fn :: select cont start Int Int String => Int
+      select cont start cur_ln start_ln cur =
+        | (str len cur) == 0 = cur_ln
+        | otherwise          = start_ln
+
+fn :: join doas cont [String] String Int Int [String] [Int] => [String] [Int]
+      join doas cont [] cur _ start_ln acc_l acc_n =
         | (str len cur) == 0 = (acc_l, acc_n)
         | otherwise          = (acc_l :: [cur], acc_n :: [start_ln])
-      join doas cont (line:rest) cur start_ln acc_l acc_n =
+      join doas cont (line:rest) cur cur_ln start_ln acc_l acc_n =
+        eff_start = select cont start cur_ln start_ln cur
+        join doas cont step line rest cur cur_ln eff_start acc_l acc_n
+
+fn :: join doas cont step String [String] String Int Int [String] [Int] => [String] [Int]
+      join doas cont step line rest cur cur_ln eff_start acc_l acc_n =
         | ends with backslash line =
           trimmed = str slice line 0 ((str len line) - 1)
-      join doas cont rest (cur + trimmed + " ") start_ln acc_l acc_n
+          join doas cont rest (cur + trimmed + " ") (cur_ln + 1) eff_start acc_l acc_n
         | otherwise =
           full = cur + line
-          join doas cont rest "" (start_ln + 1) (acc_l :: [full]) (acc_n :: [start_ln])
+          join doas cont rest "" (cur_ln + 1) (cur_ln + 1) (acc_l :: [full]) (acc_n :: [eff_start])
 
 op :: parse doas config String => DoasParseResult
       parse doas config raw    =
         raw_lines = split lines raw
-        joined = join doas cont raw_lines "" 1 [] []
+        joined = join doas cont raw_lines "" 1 1 [] []
         parse doas lines (fst joined) (snd joined) []
 
 fn :: head int [Int] Int => Int
@@ -361,19 +371,48 @@ fn :: append keepenv [String] Bool  => [String]
         kept = collect safe env (safe keepenv keys) base
         filter safe env list kept []
 
-fn :: resolve setenv ref String => String
-      resolve setenv ref item   =
-        | str starts with item "$" =
-          k = str slice item 1 (str len item)
-          k + "=" + (sys getenv k)
-        | otherwise = item + "=" + (sys getenv item)
+fn :: strip opt dollar String => String
+      strip opt dollar item   =
+        | str starts with item "$" = str slice item 1 (str len item)
+        | otherwise                = item
+
+fn :: apply setenv ref [String] String => [String]
+      apply setenv ref env_list item   =
+        k = strip opt dollar item
+        v = sys getenv k
+        apply setenv ref val env_list k v
+
+fn :: apply setenv ref val [String] String String => [String]
+      apply setenv ref val env_list k v =
+        | (str len v) == 0 = env_list
+        | otherwise        = put env kv env_list (k + "=" + v)
+
+fn :: apply setenv eq [String] String Int => [String]
+      apply setenv eq env_list item eq_i =
+        k = str slice item 0 eq_i
+        raw_v = str slice item (eq_i + 1) (str len item)
+        apply setenv eq val env_list k raw_v
+
+fn :: apply setenv eq val [String] String String => [String]
+      apply setenv eq val env_list k raw_v =
+        | str starts with raw_v "$" =
+          src_k = str slice raw_v 1 (str len raw_v)
+          resolved = sys getenv src_k
+          put env resolved ref env_list k resolved
+        | otherwise =
+          put env kv env_list (k + "=" + raw_v)
+
+fn :: put env resolved ref [String] String String => [String]
+      put env resolved ref env_list k resolved =
+        | (str len resolved) == 0 = remove env key env_list k []
+        | otherwise               = put env kv env_list (k + "=" + resolved)
 
 fn :: apply setenv specs [String] [String]    => [String]
       apply setenv specs env_list []          =  filter safe env list env_list []
       apply setenv specs env_list (item:rest) =
         | str starts with item "-"                       = apply setenv specs (remove env key env_list (str slice item 1 (str len item)) []) rest
-        | (find char idx item 0 (str len item) 61) > 0   = apply setenv specs (put env kv env_list item) rest
-        | otherwise                                      = apply setenv specs (put env kv env_list (resolve setenv ref item)) rest
+        | (find char idx item 0 (str len item) 61) > 0   = apply setenv specs (apply setenv eq env_list item (find char idx item 0 (str len item) 61)) rest
+        | otherwise                                      = apply setenv specs (apply setenv ref env_list item) rest
 
 fn :: remove env key [String] String [String] => [String]
       remove env key [] _ acc = acc
