@@ -23,7 +23,7 @@ fn :: dependencies => [String]
       dependencies =  ["/home/boogie/ridgun/libs/src/main/ridgun/lib/posix.rg", "/home/boogie/ridgun/libs/src/main/ridgun/lib/io.rg", "/home/boogie/ridgun/libs/src/main/ridgun/lib/crypto.rg", "/home/boogie/ridgun/libs/src/main/ridgun/lib/socket.rg"]
 
 fn :: task sync libs => String
-      task sync libs =  "mkdir -p .stable/deps target && for l in posix io crypto socket; do ridgunc build --strict --lib /home/boogie/ridgun/libs/src/main/ridgun/lib/$l.rg -o .stable/deps/$l.rglib && cp -f .stable/deps/$l.rglib target/$l.rglib; done"
+      task sync libs =  "mkdir -p .stable/deps target && for l in posix io crypto argon2id socket; do cp -f /home/boogie/ridgun/libs/target/bundles/$l.rglib .stable/deps/$l.rglib && cp -f .stable/deps/$l.rglib target/$l.rglib; done"
 
 fn :: task strict binaries => String
       task strict binaries =  "mkdir -p target && for u in jot rs lam vis unvis mdrr ls find mtree mktemp apply make sh timeout nc doas sha256; do ridgunc build --strict src/main/ridgun/$u/main.rg -o target/$u || exit 1; done"

@@ -242,11 +242,17 @@ op :: evaluate apply ApplySpec => [String] Int
         cmds = build apply commands spec (a_args spec) []
         run apply cmds cmds (a_dry_run spec) 0
 
+fn :: write if non empty Int String => Int
+      write if non empty _ "" = 0
+      write if non empty fd data = posix write fd data
+
 fn :: run apply cmds [String] Bool Int => [String] Int
       run apply cmds cmds True st = (cmds, 0)
       run apply cmds [] False st = ([], st)
       run apply cmds (c:rest) False st =
-        rc = shell exec c
+        res = run shell script c with []
+        _ = write if non empty 1 (fst res)
+        rc = snd res
         next_st = select nonzero status st rc
         run apply cmds rest False next_st
 
@@ -731,7 +737,10 @@ fn :: append recipe log [String] String Bool => [String]
 
 fn :: run recipe cmd String Bool  => Int
       run recipe cmd _      True  =  0
-      run recipe cmd cmd    False =  shell exec cmd
+      run recipe cmd cmd    False =
+        res = run shell script cmd with []
+        _ = write if non empty 1 (fst res)
+        snd res
 
 fn :: check recipe rc Int Bool String [String] [String] [MakeVar] MakeSpec [String] [String] => Bool [String] [String]
       check recipe rc 0 _ target rest deps vars spec built next_log =
@@ -2097,45 +2106,126 @@ fn :: call sh function ShNode [String] [Redir] ShEnv => ShEnv
         out_applied = apply out redirs (env_out after_fn) redirs env
         after_fn with env_vars = restored_vars, env_pos = orig_pos, env_locals = orig_locals, env_returning = False, env_out = out_applied
 
-fn :: quote sh words [String] [String] => [String]
-      quote sh words []       acc      =  acc
-      quote sh words (w:rest) acc      =
-        sq = char from code 39
-        quote sh words rest (acc :: [sq + w + sq])
+fn :: read fd step Int String String => String
+      read fd step _ "" acc = acc
+      read fd step rfd chunk acc = read fd all rfd (acc + chunk)
 
-fn :: render external redirs [Redir] ShEnv String => String
-      render external redirs [] _ acc = acc
-      render external redirs ((RedirIn f):rest) env acc =
-        render external redirs rest env (acc + " < " + (fst (expand sh word f env)))
-      render external redirs ((RedirOut f):rest) env acc =
-        render external redirs rest env (acc + " > " + (fst (expand sh word f env)))
-      render external redirs ((RedirAppend f):rest) env acc =
-        render external redirs rest env (acc + " >> " + (fst (expand sh word f env)))
-      render external redirs (RedirErrToOut:rest) env acc =
-        render external redirs rest env (acc + " 2>&1")
-      render external redirs (_:rest) env acc =
-        render external redirs rest env acc
+fn :: read fd all Int String => String
+      read fd all rfd acc    =
+        read fd step rfd (posix read rfd 4096) acc
 
-fn :: run external capture [String] [Redir] ShEnv => ShEnv
-      run external capture words redirs env =
-        pid = sys getpid
-        ns = sys monotonic ns
-        cap_file = "/tmp/.ut_sh_cap_" + (int to str pid) + "_" + (int to str (ns % 1000000)) + ".out"
-        in_file = cap_file + ".in"
-        cmd_base = (join with (quote sh words words []) " ") + (render external redirs redirs env "")
-        in_redir = prepare stdin file in_file (env_stdin env)
-        rc = shell exec ("(" + cmd_base + in_redir + ") > " + cap_file)
-        captured = read existing or empty cap_file
-        _ = sys unlink cap_file
-        _ = sys unlink in_file
+fn :: decode proc status ProcStatus        => Int
+      decode proc status (ProcExited code) =  code
+      decode proc status (ProcSignal sig)  =  128 + sig
+      decode proc status (ProcTimedOut s)  =  128 + s
+
+fn :: select non empty String String   => String
+      select non empty ""     fallback =  fallback
+      select non empty s      _        =  s
+
+fn :: find exec in dirs String [String] => String
+      find exec in dirs _ [] = ""
+      find exec in dirs cmd (d:rest) =
+        | is executable file (d + "/" + cmd) = d + "/" + cmd
+        | otherwise                          = find exec in dirs cmd rest
+
+fn :: resolve exec cmd path String String => String
+      resolve exec cmd path cmd path_env =
+        | (find char idx cmd 0 (str len cmd) 47) >= 0 = cmd
+        | otherwise                                   = find exec in dirs cmd (split colon path path_env)
+
+fn :: collect sh env list [MakeVar] Bool [String] => [String]
+      collect sh env list [] True acc = acc
+      collect sh env list [] False acc =
+        def_path = select non empty (sys getenv "PATH") "/usr/local/bin:/usr/bin:/bin"
+        acc :: ["PATH=" + def_path]
+      collect sh env list ((MVar k v):rest) has_path acc =
+        collect sh env list rest (has_path or (k == "PATH")) (acc :: [k + "=" + v])
+
+fn :: resolve ext stdin [Redir] ShEnv String => String
+      resolve ext stdin [] _ cur = cur
+      resolve ext stdin ((RedirIn f):rest) env _ =
+        exp_f = fst (expand sh word f env)
+        resolve ext stdin rest env (read existing or empty exp_f)
+      resolve ext stdin (_:rest) env cur =
+        resolve ext stdin rest env cur
+
+fn :: has err to out [Redir]           => Bool
+      has err to out []                =  False
+      has err to out (RedirErrToOut:_) =  True
+      has err to out (_:rest)          =  has err to out rest
+
+fn :: dup err if needed Bool Int => Int
+      dup err if needed False _ = 0
+      dup err if needed True out_fd = posix dup2 out_fd 2
+
+fn :: execve child branch String [String] [String] Int Int Int Int Bool => Int
+      execve child branch resolved argv envp in_rfd in_wfd out_rfd out_wfd merge_err =
+        _ = posix close in_wfd
+        _ = posix close out_rfd
+        _ = posix dup2 in_rfd 0
+        _ = posix close in_rfd
+        _ = posix dup2 out_wfd 1
+        _ = dup err if needed merge_err out_wfd
+        _ = posix close out_wfd
+        _ = posix execve resolved argv envp
+        _ = posix execve "/bin/sh" (["/bin/sh"] :: argv) envp
+        posix exit 127
+
+fn :: wait ext parent Int Int Int Int Int String [Redir] ShEnv => ShEnv
+      wait ext parent pid in_rfd in_wfd out_rfd out_wfd stdin_data redirs env =
+        _ = posix close in_rfd
+        _ = posix close out_wfd
+        _ = write if non empty in_wfd stdin_data
+        _ = posix close in_wfd
+        captured = read fd all out_rfd ""
+        _ = posix close out_rfd
+        wp = posix waitpid pid 0
+        rc = decode proc status (waitpid decode status (snd wp))
         env with env_status = rc, env_out = apply out redirs captured redirs env, env_stdin = ""
 
-fn :: prepare stdin file String  String => String
-      prepare stdin file in_file data   =
-        | (str len data) == 0 = ""
+fn :: dispatch ext fork Int String [String] [String] Int Int Int Int Bool String [Redir] ShEnv => ShEnv
+      dispatch ext fork 0 resolved argv envp in_rfd in_wfd out_rfd out_wfd merge_err _ _ env =
+        _ = execve child branch resolved argv envp in_rfd in_wfd out_rfd out_wfd merge_err
+        env
+      dispatch ext fork pid _ _ _ in_rfd in_wfd out_rfd out_wfd _ stdin_data redirs env =
+        | pid < 0 =
+          _ = posix close in_rfd
+          _ = posix close in_wfd
+          _ = posix close out_rfd
+          _ = posix close out_wfd
+          env with env_status = 1, env_stdin = ""
         | otherwise =
-          _ = write file in_file data
-          " < " + in_file
+          wait ext parent pid in_rfd in_wfd out_rfd out_wfd stdin_data redirs env
+
+fn :: run external checked Int String [String] [Redir] ShEnv => ShEnv
+      run external checked 127 _ _ _ env = env with env_status = 127, env_stdin = ""
+      run external checked 126 _ _ _ env = env with env_status = 126, env_stdin = ""
+      run external checked _ resolved args redirs env =
+        p_in = posix pipe
+        p_out = posix pipe
+        in_rfd = snd3 p_in
+        in_wfd = trd3 p_in
+        out_rfd = snd3 p_out
+        out_wfd = trd3 p_out
+        envp = collect sh env list (env_vars env) False []
+        stdin_data = resolve ext stdin redirs env (env_stdin env)
+        merge_err = has err to out redirs
+        dispatch ext fork (posix fork) resolved ([resolved] :: args) envp in_rfd in_wfd out_rfd out_wfd merge_err stdin_data redirs env
+
+fn :: run external resolved String [String] [Redir] ShEnv => ShEnv
+      run external resolved "" _ _ env =
+        env with env_status = 127, env_stdin = ""
+      run external resolved resolved args redirs env =
+        st_chk = check cmd path resolved
+        run external checked st_chk resolved args redirs env
+
+fn :: run external capture [String] [Redir] ShEnv => ShEnv
+      run external capture [] _ env = env
+      run external capture (prog:args) redirs env =
+        path_var = select non empty (lookup var (env_vars env) "PATH") (select non empty (sys getenv "PATH") "/usr/local/bin:/usr/bin:/bin")
+        resolved = resolve exec cmd path prog path_var
+        run external resolved resolved args redirs env
 
 fn :: interpret backslash escapes String Int Int String => String
       interpret backslash escapes s idx len acc =
@@ -2638,55 +2728,86 @@ fn :: timeout expiry status TimeoutSpec Int     => Int
         | to_preserve spec = 128 + sig_num
         | otherwise        = 124
 
-fn :: quote timeout tok String => String
-      quote timeout tok s      =  "'" + s + "'"
-
-fn :: quote timeout list [String] => [String]
-      quote timeout list []       =  []
-      quote timeout list (x:xs)   =  [quote timeout tok x] :: (quote timeout list xs)
-
-fn :: wait child deadline Int Int Int Int TimeoutSpec String => String Int
-      wait child deadline pid deadline_ms kill_ms sig_num spec cap_file =
-        | not (process exists pid) = finish child completed pid cap_file
-        | (sys monotonic ms) >= deadline_ms =
-          _ = posix kill pid sig_num
-          _ = escalate kill after pid kill_ms
-          out = read existing or empty cap_file
-          _ = sys unlink cap_file
-          (out, timeout expiry status spec sig_num)
-        | otherwise =
-          _ = sys poll 0 1 5
-          wait child deadline pid deadline_ms kill_ms sig_num spec cap_file
-
-fn :: escalate kill after Int Int     => Int
-      escalate kill after pid kill_ms =
-        | not (process exists pid) = 0
-        | kill_ms <= 0             = posix kill pid 9
-        | otherwise                =
-          _ = sys poll 0 1 (min timeout wait kill_ms)
-          posix kill pid 9
-
 fn :: min timeout wait Int => Int
       min timeout wait ms  =
         | ms > 50   = 50
         | otherwise = ms
 
-fn :: finish child completed Int String   => String Int
-      finish child completed _   cap_file =
-        rc_file = cap_file + ".rc"
-        _ = wait for rc file rc_file 0
-        rc_str = trim ws (read existing or empty rc_file)
-        out = read existing or empty cap_file
-        _ = sys unlink cap_file
-        _ = sys unlink rc_file
-        (out, parse opt digits rc_str)
+fn :: default exec env => [String]
+      default exec env =
+        path_v = select non empty (sys getenv "PATH") "/usr/local/bin:/usr/bin:/bin"
+        ["PATH=" + path_v, "HOME=" + (sys getenv "HOME"), "USER=" + (sys getenv "USER")]
 
-fn :: wait for rc file String Int => ()
-      wait for rc file rc_file tries =
-        | (file exists rc_file) or (tries >= 20) = ()
+fn :: drain ready step Int String String => String
+      drain ready step _ "" acc = acc
+      drain ready step rfd chunk acc = drain ready fd rfd (acc + chunk)
+
+fn :: drain ready fd Int String => String
+      drain ready fd rfd acc    =
+        | (sys poll rfd 1 0) <= 0 = acc
+        | otherwise               = drain ready step rfd (posix read rfd 4096) acc
+
+fn :: escalate kill check Int (Int, Int) => Int
+      escalate kill check pid (0, _)     =
+        _ = posix kill pid 9
+        _ = posix waitpid pid 0
+        0
+      escalate kill check _   _          =  0
+
+fn :: escalate kill step Int Int (Int, Int) => Int
+      escalate kill step pid kill_ms (0, _) =
+        | kill_ms <= 0 =
+          _ = posix kill pid 9
+          _ = posix waitpid pid 0
+          0
         | otherwise =
-          _ = sys poll 0 1 2
-          wait for rc file rc_file (tries + 1)
+          _ = sys poll 0 1 (min timeout wait kill_ms)
+          escalate kill check pid (posix waitpid pid wnohang)
+      escalate kill step _ _ _ = 0
+
+fn :: escalate kill wait Int Int     => Int
+      escalate kill wait pid kill_ms =
+        escalate kill step pid kill_ms (posix waitpid pid wnohang)
+
+fn :: wait timeout step Int Int Int Int Int TimeoutSpec String (Int, Int) => String Int
+      wait timeout step pid rfd deadline_ms kill_ms sig_num spec acc1 (0, _) =
+        | (sys monotonic ms) >= deadline_ms =
+          _ = posix kill pid sig_num
+          _ = escalate kill wait pid kill_ms
+          final_out = read fd all rfd acc1
+          _ = posix close rfd
+          (final_out, timeout expiry status spec sig_num)
+        | otherwise =
+          _ = sys poll rfd 1 5
+          wait timeout loop pid rfd deadline_ms kill_ms sig_num spec acc1
+      wait timeout step _ rfd _ _ _ _ acc1 (_, wstatus) =
+        final_out = read fd all rfd acc1
+        _ = posix close rfd
+        (final_out, decode proc status (waitpid decode status wstatus))
+
+fn :: wait timeout loop Int Int Int Int Int TimeoutSpec String => String Int
+      wait timeout loop pid rfd deadline_ms kill_ms sig_num spec acc =
+        acc1 = drain ready fd rfd acc
+        wait timeout step pid rfd deadline_ms kill_ms sig_num spec acc1 (posix waitpid pid wnohang)
+
+fn :: dispatch timeout fork Int String [String] Int Int Int TimeoutSpec => String Int
+      dispatch timeout fork 0 resolved argv rfd wfd _ _ =
+        _ = posix close rfd
+        _ = posix dup2 wfd 1
+        _ = posix dup2 wfd 2
+        _ = posix close wfd
+        _ = posix execve resolved argv (default exec env)
+        _ = posix exit 127
+        ("", 127)
+      dispatch timeout fork pid _ _ rfd wfd sig_num spec =
+        | pid < 0 =
+          _ = posix close rfd
+          _ = posix close wfd
+          ("", 125)
+        | otherwise =
+          _ = posix close wfd
+          deadline = (sys monotonic ms) + (to_dur_ms spec)
+          wait timeout loop pid rfd deadline (to_kill_ms spec) sig_num spec ""
 
 op :: execute timeout TimeoutSpec => String Int
       execute timeout spec        =
@@ -2704,18 +2825,12 @@ fn :: run timeout checked Int Int TimeoutSpec => String Int
       run timeout checked 126 _ _ = ("", 126)
       run timeout checked 127 _ _ = ("", 127)
       run timeout checked _ sig_num spec =
-        my_pid = sys getpid
-        now_ns = sys monotonic ns
-        cap_file = "/tmp/.ut_to_" + (int to str my_pid) + "_" + (int to str (now_ns % 1000000)) + ".out"
-        pid_file = cap_file + ".pid"
-        rc_file = cap_file + ".rc"
-        cmd_line = join with (quote timeout list ([to_cmd spec] :: (to_args spec))) " "
-        bg_script = "(" + cmd_line + " > " + cap_file + " 2>&1; echo $? > " + rc_file + ") & echo $! > " + pid_file
-        _ = shell exec bg_script
-        child_pid = parse opt digits (trim ws (read existing or empty pid_file))
-        _ = sys unlink pid_file
-        deadline = (sys monotonic ms) + (to_dur_ms spec)
-        wait child deadline child_pid deadline (to_kill_ms spec) sig_num spec cap_file
+        path_v = select non empty (sys getenv "PATH") "/usr/local/bin:/usr/bin:/bin"
+        resolved = resolve exec cmd path (to_cmd spec) path_v
+        p_out = posix pipe
+        rfd = snd3 p_out
+        wfd = trd3 p_out
+        dispatch timeout fork (posix fork) resolved ([resolved] :: (to_args spec)) rfd wfd sig_num spec
 
 -- ============================================================================
 -- 5. BSD nc(1) Netcat Implementation (FR-PROC-003)

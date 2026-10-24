@@ -998,12 +998,31 @@ fn :: record find match String Bool FindSpec [String] => [String]
         _ = run find exec (f_exec_cmd spec) path
         acc :: [path]
 
+fn :: resolve find prog String [String] => String
+      resolve find prog prog   []       =  prog
+      resolve find prog prog   (d:rest) =
+        | lstat exists (file lstat (d + "/" + prog)) = d + "/" + prog
+        | otherwise                                  = resolve find prog prog rest
+
+fn :: resolve find cmd String => String
+      resolve find cmd prog   =
+        | str contains prog "/" = prog
+        | otherwise             = resolve find prog prog ["/usr/local/bin", "/usr/bin", "/bin"]
+
+fn :: run find fork Int String [String] => Int
+      run find fork 0 resolved_prog argv =
+        _ = posix execve resolved_prog argv ["PATH=/usr/local/bin:/usr/bin:/bin"]
+        posix exit 127
+      run find fork pid _ _ =
+        | pid < 0   = 1
+        | otherwise = snd (posix waitpid pid 0)
+
 fn :: run find exec [String]    String => Int
       run find exec []          path   =  0
       run find exec (prog:args) path   =
-        sub_prog = subst braces prog path
+        sub_prog = resolve find cmd (subst braces prog path)
         sub_args = subst braces list args path []
-        sys exec sub_prog sub_args []
+        run find fork (posix fork) sub_prog ([sub_prog] :: sub_args)
 
 fn :: subst braces String String => String
       subst braces tok    path   =

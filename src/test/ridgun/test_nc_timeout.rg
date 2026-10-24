@@ -31,7 +31,7 @@ fn :: test timeout exhaustive => ()
         _ = assert int equals (snd to_pres_kill) 137 "timeout --preserve-status -s 9 (SIGKILL) returns 137 (128 + 9)"
         to_fg = execute timeout (parse timeout args ["--foreground", "--signal=SIGTERM", "--kill-after=100ms", "50ms", "sleep", "2"])
         _ = assert int equals (snd to_fg) 124 "timeout --foreground --signal=SIGTERM --kill-after=100ms times out with 124"
-        _ = shell exec "rm -rf /tmp/ut_no_host_timeout && mkdir -p /tmp/ut_no_host_timeout && ln -s /bin/echo /tmp/ut_no_host_timeout/echo && ln -s /bin/sleep /tmp/ut_no_host_timeout/sleep && ln -s /bin/sh /tmp/ut_no_host_timeout/sh"
+        _ = shell exec "rm -rf /tmp/ut_no_host_timeout && mkdir -p /tmp/ut_no_host_timeout && ln -s /bin/echo /tmp/ut_no_host_timeout/echo && ln -s /bin/sleep /tmp/ut_no_host_timeout/sleep"
         rc_anticheat_ok = shell exec "PATH=/tmp/ut_no_host_timeout ./target/timeout 1s echo pure_ridgun_ok > /tmp/ut_to_ac.out"
         _ = assert int equals rc_anticheat_ok 0 "timeout anti-cheat: target/timeout succeeds when /usr/bin/timeout is absent from PATH"
         _ = assert str eq (read file "/tmp/ut_to_ac.out") ("pure_ridgun_ok" + nl) "timeout anti-cheat: target/timeout captures stdout without /usr/bin/timeout"

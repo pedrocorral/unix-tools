@@ -466,7 +466,7 @@ fn :: run after auth Bool DoasRule DoasSpec String => Int
         t_gid = snd ug
         _ = switch if valid ids t_uid t_gid
         env_list = build doas env rule for caller_user as (d_target_user spec)
-        sys execve (d_cmd spec) (d_cmd_args spec) env_list
+        posix execve (d_cmd spec) ([d_cmd spec] :: (d_cmd_args spec)) env_list
 
 fn :: switch if valid ids Int Int => Int
       switch if valid ids t_uid t_gid =
