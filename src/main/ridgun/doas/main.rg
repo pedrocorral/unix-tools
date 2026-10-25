@@ -76,7 +76,9 @@ fn :: dispatch doas spec DoasSpec => ()
         dispatch doas clear (d_clear_persist spec) spec
 
 fn :: dispatch doas clear Bool  DoasSpec => ()
-      dispatch doas clear True  _        =  ()
+      dispatch doas clear True  _        =
+        _ = clear doas persist
+        ()
       dispatch doas clear False spec     =
         raw_conf = read file (resolve conf path (d_check_conf spec))
         parsed = parse doas config raw_conf

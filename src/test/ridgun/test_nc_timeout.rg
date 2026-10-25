@@ -56,9 +56,12 @@ fn :: test nc exhaustive => ()
         _ = assert true (str contains (snd nc_range) "44211") "nc -zv port range scan reports port 44211"
         nc_nodns = execute nc (parse nc args ["-n", "-zv", "localhost", "44210"]) with ""
         _ = assert false (check eq (fst nc_nodns) 0) "nc -n rejects non-numeric hostname 'localhost'"
-        nc_udp_tr = execute nc (parse nc args ["-u", "127.0.0.1", "44215"]) with "udp_datagram_payload"
-        _ = assert int equals (fst nc_udp_tr) 0 "nc -u 127.0.0.1 44215 UDP datagram transfer succeeds"
-        _ = assert str eq (snd nc_udp_tr) "udp_datagram_payload" "nc -u preserves UDP datagram payload"
+        nc_udp_unb = execute nc (parse nc args ["-u", "-w", "1", "127.0.0.1", "44299"]) with "udp_datagram_payload"
+        _ = assert str eq (snd nc_udp_unb) "" "ADR-0002 anti-fake: nc -u to unbound port 44299 does NOT fake an in-memory echo"
+        rc_udp_cs = shell exec "(./target/nc -lu 127.0.0.1 44216 > /tmp/ut_nc_udp_srv.out) & UPID=$!; sleep 0.1; printf 'real_udp_kernel_dgram' | ./target/nc -u 127.0.0.1 44216; wait $UPID"
+        _ = assert int equals rc_udp_cs 0 "ADR-0002 E2E binary: real two-process target/nc -lu server <-> target/nc -u client UDP transfer exits 0"
+        _ = assert str eq (read file "/tmp/ut_nc_udp_srv.out") "real_udp_kernel_dgram" "ADR-0002 E2E binary: target/nc -lu server received 'real_udp_kernel_dgram' over real kernel AF_INET SOCK_DGRAM socket"
+        _ = sys unlink "/tmp/ut_nc_udp_srv.out"
         upath = "/tmp/ut_nc_stream.sock"
         _ = sys unlink upath
         ul = sys unix listen upath 4
@@ -67,6 +70,13 @@ fn :: test nc exhaustive => ()
         _ = assert int equals (fst nc_uz) 0 "nc -zU /tmp/ut_nc_stream.sock zero-I/O probe succeeds against active unix listener"
         _ = posix close (sock fd ul)
         _ = sys unlink upath
+        u_stream_path = "/tmp/ut_nc_u_stream.sock"
+        _ = sys unlink u_stream_path
+        rc_unix_cs = shell exec "(printf 'unix_pong_srv' | ./target/nc -lU /tmp/ut_nc_u_stream.sock > /tmp/ut_nc_u_srv.out) & USPID=$!; sleep 0.1; printf 'unix_ping_cli' | ./target/nc -U /tmp/ut_nc_u_stream.sock > /tmp/ut_nc_u_cli.out; wait $USPID"
+        _ = assert int equals rc_unix_cs 0 "ADR-0002 E2E binary: real two-process target/nc -lU <-> target/nc -U Unix domain stream transfer exits 0"
+        _ = assert str eq (read file "/tmp/ut_nc_u_srv.out") "unix_ping_cli" "ADR-0002 E2E binary: target/nc -lU server received 'unix_ping_cli' over kernel AF_UNIX socket"
+        _ = assert str eq (read file "/tmp/ut_nc_u_cli.out") "unix_pong_srv" "ADR-0002 E2E binary: target/nc -U client received 'unix_pong_srv' over kernel AF_UNIX socket"
+        _ = shell exec "rm -f /tmp/ut_nc_u_srv.out /tmp/ut_nc_u_cli.out /tmp/ut_nc_u_stream.sock"
         rc_nc_stdin = shell exec "printf 'stdin_net_payload' | ./target/nc 127.0.0.1 44220 > /tmp/ut_nc_stdin.out"
         _ = assert int equals rc_nc_stdin 0 "E2E binary: printf | target/nc reads payload from stdin (fd 0)"
         _ = assert str eq (read file "/tmp/ut_nc_stdin.out") "stdin_net_payload" "E2E binary: target/nc transfers exact stdin payload (not empty string)"
@@ -76,10 +86,15 @@ fn :: test nc exhaustive => ()
         _ = assert str eq (read file "/tmp/ut_nc_srv_rx.out") "ping_from_client" "E2E binary: target/nc -l server received 'ping_from_client' over real kernel TCP socket"
         _ = assert str eq (read file "/tmp/ut_nc_cli_rx.out") "pong_from_server" "E2E binary: target/nc client received 'pong_from_server' over real kernel TCP socket"
         _ = shell exec "rm -f /tmp/ut_nc_srv_rx.out /tmp/ut_nc_cli_rx.out"
+        to_pgrp = execute timeout (parse timeout args ["80ms", "/bin/sh", "-c", "sleep 2 & echo $! > /tmp/ut_to_gchild.pid; wait"])
+        _ = assert int equals (snd to_pgrp) 124 "ADR-0002 timeout process group: times out shell + background grandchild with 124"
+        gchild_pid = str to int (trim ws (read existing or empty "/tmp/ut_to_gchild.pid"))
+        _ = sys unlink "/tmp/ut_to_gchild.pid"
+        _ = assert false (process exists gchild_pid) "ADR-0002 timeout setpgid: grandchild process in process group was terminated on timeout"
         ()
 
 fn :: main => ()
       main =
         _ = test timeout exhaustive
         _ = test nc exhaustive
-        echo "All 28 exhaustive BSD timeout(1) & nc(1) assertions in test_nc_timeout.rg passed!"
+        echo "All 34 exhaustive BSD timeout(1) & nc(1) assertions in test_nc_timeout.rg passed!"

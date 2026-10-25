@@ -37,7 +37,7 @@ fn :: run mtree verify MtreeSpec => ()
       run mtree verify spec      =
         raw_spec = read mtree spec (m_spec_file spec)
         entries = parse mtree spec text raw_spec
-        diffs = verify mtree entries against (m_path spec) update (m_update spec)
+        diffs = verify mtree full entries with spec
         finish mtree verify diffs
 
 fn :: finish mtree verify [String] => ()

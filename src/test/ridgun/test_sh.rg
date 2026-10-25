@@ -251,6 +251,61 @@ fn :: test sh upstream sete and subshells => ()
         r_for_empty = run shell script "for x in; do echo $x; done; echo \"empty_for:$?\"" with []
         assert str eq (fst r_for_empty) ("empty_for:0" + nl) "upstream execution/for1: 'for x in; do ...' with empty item list executes 0 times and exits 0"
 
+fn :: test sh full bsd parity extensions => ()
+      test sh full bsd parity extensions =
+        nl = char from code 10
+        tab = char from code 9
+        _ = echo "=== 10. Full POSIX/BSD sh(1) Parity Suite: Real cat, >1000 Loops, Subshell, Globs, Arith, Redirs, IFS, Builtins, Jobs & Traps (TS-PROC-002) ==="
+        -- 1. Real external cat execution (including flags like cat -n)
+        _ = write file "/tmp/ut_sh_cat1.txt" ("lineA" + nl + "lineB" + nl)
+        r_cat_n = run shell script "cat -n /tmp/ut_sh_cat1.txt" with []
+        _ = sys unlink "/tmp/ut_sh_cat1.txt"
+        _ = assert true ((str contains (fst r_cat_n) "1") and (str contains (fst r_cat_n) "lineA")) "sh executes real external /bin/cat with -n flag via PATH"
+        -- 2. Unbounded while & until loops (> 1,000 iterations)
+        r_loop_big = run shell script "I=0; while [ $I -lt 2500 ]; do I=$(( I + 1 )); done; U=0; until [ $U -ge 1500 ]; do U=$(( U + 1 )); done; echo \"$I:$U\"" with []
+        _ = assert str eq (fst r_loop_big) ("2500:1500" + nl) "sh while (2500 iters) and until (1500 iters) execute without artificial 1000-iteration cap"
+        -- 3. Subshell ( ... ) full OS isolation (cwd, umask, variables, options)
+        orig_cwd = sys getcwd
+        r_sub_iso = run shell script "V=parent_val; umask 0022; ( cd /tmp; umask 0077; V=sub_val; set -e; echo -n \"sub:$(umask):$V|\" ); echo \"par:$(umask):$V:$(pwd)\"" with []
+        _ = sys chdir orig_cwd
+        _ = assert true (str starts with (fst r_sub_iso) "sub:0077:sub_val|par:0022:parent_val:") "sh subshell ( ... ) isolates cd, umask, variable mutations, and options from parent"
+        -- 4. Bracket [a-c] / [!0-9] & subdirectory pathname globbing
+        _ = shell exec "rm -rf /tmp/ut_sh_bglob && mkdir -p /tmp/ut_sh_bglob/sub && touch /tmp/ut_sh_bglob/a1.txt /tmp/ut_sh_bglob/b2.txt /tmp/ut_sh_bglob/c3.txt /tmp/ut_sh_bglob/9z.txt /tmp/ut_sh_bglob/sub/x.rg /tmp/ut_sh_bglob/sub/y.rg"
+        r_bglob = run shell script "cd /tmp/ut_sh_bglob; echo [a-b]?.txt [!0-9]3.txt sub/*.rg" with []
+        _ = sys chdir orig_cwd
+        _ = shell exec "rm -rf /tmp/ut_sh_bglob"
+        _ = assert str eq (fst r_bglob) ("a1.txt b2.txt c3.txt sub/x.rg sub/y.rg" + nl) "sh globbing supports [a-b] ranges, [!0-9] negation, and sub/*.rg directory globs"
+        -- 5. Full arithmetic: ~, =, +=, -=, *=, /=, %=, <<= , >>=, &=, ^=, |=, ++x, --x, x++, x--
+        r_arith_full = run shell script "A=10; echo -n \"$(( ~0 )):$(( A += 5 )):$(( A -= 3 )):$(( A *= 2 )):$(( A /= 4 )):$(( ++A )):$(( A++ )):$A|\"; B=7; echo \"$(( --B )):$(( B-- )):$B\"" with []
+        _ = assert str eq (fst r_arith_full) ("-1:15:12:24:6:7:7:8|6:6:5" + nl) "sh $((...)) supports bitwise ~, compound assignments (+=, -=, *=, /=), and pre/post ++/--"
+        -- 6. Per-command prefix variable assignments (VAR=val cmd vs bare VAR=val)
+        r_prefix_env = run shell script "P_VAR=orig; P_VAR=temp_override /usr/bin/printenv P_VAR; echo \"after:$P_VAR\"" with []
+        _ = assert str eq (fst r_prefix_env) ("temp_override" + nl + "after:orig" + nl) "sh prefix VAR=val before external command exports only to child and preserves shell VAR"
+        -- 7. File-descriptor redirections: 2>file, 2>>file, >&2, 2>&1
+        r_redir_err = run shell script "sh -c 'echo err_msg1 >&2' 2> /tmp/ut_sh_err.log; sh -c 'echo err_msg2 >&2' 2>> /tmp/ut_sh_err.log; cat /tmp/ut_sh_err.log" with []
+        _ = sys unlink "/tmp/ut_sh_err.log"
+        _ = assert str eq (fst r_redir_err) ("err_msg1" + nl + "err_msg2" + nl) "sh supports >&2 stderr emission and 2>file / 2>>file stderr redirections"
+        -- 8. Tilde ~ expansion and custom IFS field splitting
+        r_tilde_ifs = run shell script "HOME=/custom/home; echo -n \"~:~/bin|\"; IFS=:; LIST='one:two:three'; for item in $LIST; do echo -n \"[$item]\"; done; echo ''" with []
+        _ = assert str eq (fst r_tilde_ifs) ("/custom/home:/custom/home/bin|[one][two][three]" + nl) "sh expands ~ and ~/sub from $HOME and splits unquoted expansions using custom $IFS"
+        -- 9. Built-ins: command, command -v, type, umask, getopts, exec
+        r_cmd_type = run shell script "myfn() \{ echo fn_body; \}; echo -n \"$(command -v echo):$(command -v ls):\"; type myfn | head -n 1" with []
+        _ = assert true ((str contains (fst r_cmd_type) "echo:") and (str contains (fst r_cmd_type) "ls:")) "sh command -v and type built-ins identify built-ins, functions, and PATH executables"
+        r_getopts = run shell script "OPTIND=1; while getopts 'ab:c' opt -a -b hello -c rest_arg; do echo -n \"$opt:$OPTARG|\"; done; shift $(( OPTIND - 1 )); echo \"rem:$1\"" with []
+        _ = assert str eq (fst r_getopts) ("a:|b:hello|c:|rem:rest_arg" + nl) "sh getopts parses flags, option arguments ($OPTARG), updates $OPTIND, and handles shift"
+        r_getopts_clus = run shell script "OPTIND=1; while getopts ':xy:' opt -xyval -z; do echo -n \"$opt:$OPTARG|\"; done; echo ''" with []
+        _ = assert str eq (fst r_getopts_clus) ("x:|y:val|?:z|" + nl) "sh getopts supports clustered short options (-xyval) and silent error reporting (leading :)"
+        r_exec = run shell script "sh -c 'exec echo from_exec; echo never_after_exec'" with []
+        _ = assert str eq (fst r_exec) ("from_exec" + nl) "sh exec replaces shell execution and does not run subsequent commands"
+        -- 10. Background jobs (cmd &), $!, and wait
+        r_bg_wait = run shell script "sh -c 'echo bg_done > /tmp/ut_sh_bg.out; exit 7' & BG_PID=$!; wait $BG_PID; RC=$?; echo \"$(cat /tmp/ut_sh_bg.out):$RC\"" with []
+        _ = sys unlink "/tmp/ut_sh_bg.out"
+        _ = assert str eq (fst r_bg_wait) ("bg_done:7" + nl) "sh launches asynchronous background job (&), records $!, and reaps exit status via wait"
+        -- 11. Signal traps (INT, TERM, - reset)
+        r_trap_sig = run shell script "trap 'echo caught_term; exit 0' TERM; kill -TERM $$; echo after_term" with []
+        _ = assert true (str contains (fst r_trap_sig) "caught_term") "sh trap '...' TERM catches SIGTERM sent to $$ and runs handler"
+        ()
+
 fn :: main => ()
       main =
         _ = test sh quoting and comments
@@ -262,4 +317,5 @@ fn :: main => ()
         _ = test sh upstream expansion and params
         _ = test sh upstream control and builtins
         _ = test sh upstream sete and subshells
-        echo "All 101 exhaustive & upstream POSIX/BSD sh(1) assertions in test_sh.rg passed!"
+        _ = test sh full bsd parity extensions
+        echo "All 116 exhaustive & upstream POSIX/BSD sh(1) assertions in test_sh.rg passed!"

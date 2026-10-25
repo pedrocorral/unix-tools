@@ -19,7 +19,7 @@ type DoasDecision = DecDeny | DecPermit Bool DoasRule
 
 type DoasSpec = d_check_conf: String, d_target_user: String, d_non_interactive: Bool, d_clear_persist: Bool, d_shell_mode: Bool, d_cmd: String, d_cmd_args: [String]
 
-type Sha256Spec = sh_quiet: Bool, sh_reverse: Bool, sh_has_str: Bool, sh_str: String, sh_key: String, sh_argon_salt: String, sh_verify_phc: String, sh_files: [String]
+type Sha256Spec = sh_quiet: Bool, sh_reverse: Bool, sh_has_str: Bool, sh_str: String, sh_key: String, sh_argon_salt: String, sh_verify_phc: String, sh_check_file: String, sh_files: [String]
 
 -- ============================================================================
 -- Foundational String & List Helpers
@@ -247,6 +247,29 @@ fn :: parse rule cmd args [String] DoasRule Int => Bool DoasRule String
 -- 2. Policy Engine ("Last Matching Rule Wins") — FR-SEC-001
 -- ============================================================================
 
+fn :: split colon dirs String Int Int String [String] => [String]
+      split colon dirs s idx len cur acc =
+        | idx >= len                = finalize lines cur acc
+        | (str char at s idx) == 58 = split colon dirs s (idx + 1) len "" (finalize lines cur acc)
+        | otherwise                 = split colon dirs s (idx + 1) len (cur + (str slice s idx (idx + 1))) acc
+
+fn :: select doas path dirs String => [String]
+      select doas path dirs ""     =  ["/bin", "/sbin", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin"]
+      select doas path dirs p      =  split colon dirs p 0 (str len p) "" []
+
+fn :: search doas cmd in String [String] => String
+      search doas cmd in cmd [] = cmd
+      search doas cmd in cmd (d:rest) =
+        | lstat exists (file lstat (d + "/" + cmd)) = d + "/" + cmd
+        | otherwise                                 = search doas cmd in cmd rest
+
+op :: resolve doas cmd String => String
+      resolve doas cmd cmd    =
+        | (str len cmd) == 0        = cmd
+        | str starts with cmd "-"   = cmd
+        | str contains cmd "/"      = cmd
+        | otherwise                 = search doas cmd in cmd (select doas path dirs (sys getenv "PATH"))
+
 fn :: match rule ident String String [String] => Bool
       match rule ident rule_id caller_user caller_groups =
         | str starts with rule_id ":" = list contains str caller_groups (str slice rule_id 1 (str len rule_id))
@@ -255,7 +278,7 @@ fn :: match rule ident String String [String] => Bool
 fn :: match rule cmd DoasRule String [String] => Bool
       match rule cmd rule cmd cmd_args =
         | not (dr_has_cmd rule)  = True
-        | (dr_cmd rule) != cmd   = False
+        | ((dr_cmd rule) != cmd) and ((dr_cmd rule) != (resolve doas cmd cmd)) = False
         | not (dr_has_args rule) = True
         | otherwise              = str list eq (dr_args rule) cmd_args
 
@@ -450,23 +473,82 @@ fn :: select candidate password String String      => String
 fn :: read candidate password String      => String
       read candidate password caller_user =  select candidate password (sys getenv "DOAS_PASS") caller_user
 
+fn :: persist ticket path => String
+      persist ticket path =  "/tmp/.doas_persist_" + (int to str (sys getuid))
+
+op :: clear doas persist => Bool
+      clear doas persist =  sys unlink (persist ticket path)
+
+fn :: check persist ticket => Bool
+      check persist ticket =  check persist path (persist ticket path)
+
+fn :: check persist path String => Bool
+      check persist path tpath  =
+        | not (lstat exists (file lstat tpath)) = False
+        | otherwise =
+          ts_str = strip cr (read file tpath)
+          now_sec = (sys wall time ms) / 1000
+          saved_sec = str to int ts_str
+          (saved_sec > 0) and ((now_sec - saved_sec) < 300)
+
+fn :: write persist ticket Bool  => ()
+      write persist ticket False =  ()
+      write persist ticket True  =
+        tpath = persist ticket path
+        now_sec = (sys wall time ms) / 1000
+        _ = write file tpath (int to str now_sec)
+        _ = sys chmod tpath 384
+        ()
+
 fn :: authenticate doas DoasRule DoasSpec String      => Bool
       authenticate doas rule     spec     caller_user =
-        | dr_nopass rule           = True
-        | d_non_interactive spec   = False
-        | otherwise                = verify doas password (read candidate password caller_user)
+        | dr_nopass rule                               = True
+        | (dr_persist rule) and (check persist ticket) = True
+        | d_non_interactive spec                       = False
+        | otherwise                                    =
+          ok = verify doas password (read candidate password caller_user)
+          _ = write persist ticket (ok and (dr_persist rule))
+          ok
+
+fn :: write doas audit log DoasRule DoasSpec String => ()
+      write doas audit log rule spec caller_user =
+        | dr_nolog rule = ()
+        | otherwise     = append doas log file (sys getenv "DOAS_LOG_FILE") caller_user (d_target_user spec) (d_cmd spec)
+
+fn :: append doas log file String String String String => ()
+      append doas log file "" _ _ _ = ()
+      append doas log file log_path caller target cmd =
+        prev = read existing log log_path
+        line = "doas: " + caller + " ran command " + cmd + " as " + target + (char from code 10)
+        _ = write file log_path (prev + line)
+        ()
+
+fn :: read existing log String => String
+      read existing log p      =
+        | lstat exists (file lstat p) = read file p
+        | otherwise                   = ""
 
 fn :: run after auth Bool DoasRule DoasSpec String => Int
       run after auth False _ _ _ =
         _ = posix write 2 ("doas: Authentication required" + (char from code 10))
         1
       run after auth True rule spec caller_user =
+        _ = write doas audit log rule spec caller_user
         ug = sys lookup uid gid (d_target_user spec)
         t_uid = fst ug
         t_gid = snd ug
-        _ = switch if valid ids t_uid t_gid
         env_list = build doas env rule for caller_user as (d_target_user spec)
-        posix execve (d_cmd spec) ([d_cmd spec] :: (d_cmd_args spec)) env_list
+        resolved_c = resolve doas cmd (d_cmd spec)
+        run doas fork (posix fork) t_uid t_gid resolved_c ([resolved_c] :: (d_cmd_args spec)) env_list
+
+fn :: run doas fork Int Int Int String [String] [String] => Int
+      run doas fork 0 t_uid t_gid prog argv env_list =
+        _ = switch if valid ids t_uid t_gid
+        _ = posix execve prog argv env_list
+        posix exit 127
+      run doas fork pid _ _ _ _ _ =
+        | pid < 0   = 1
+        | otherwise = snd (posix waitpid pid 0)
 
 fn :: switch if valid ids Int Int => Int
       switch if valid ids t_uid t_gid =
@@ -482,7 +564,7 @@ fn :: switch if valid ids Int Int => Int
 -- ============================================================================
 
 fn :: default sha256 spec => Sha256Spec
-      default sha256 spec =  Sha256Spec False False False "" "" "" "" []
+      default sha256 spec =  Sha256Spec False False False "" "" "" "" "" []
 
 fn :: parse sha256 loop [String]      Sha256Spec => Sha256Spec
       parse sha256 loop []            spec       =  spec
@@ -492,6 +574,7 @@ fn :: parse sha256 loop [String]      Sha256Spec => Sha256Spec
       parse sha256 loop ("-rq":rest)  spec       =  parse sha256 loop rest (spec with sh_quiet = True, sh_reverse = True)
       parse sha256 loop ("-s":s:rest) spec       =  parse sha256 loop rest (spec with sh_has_str = True, sh_str = s)
       parse sha256 loop ("-k":k:rest) spec       =  parse sha256 loop rest (spec with sh_key = k)
+      parse sha256 loop ("-c":c:rest) spec       =  parse sha256 loop rest (spec with sh_check_file = c)
       parse sha256 loop ("--argon2id":s:rest) spec = parse sha256 loop rest (spec with sh_argon_salt = s)
       parse sha256 loop ("--verify":p:rest) spec =  parse sha256 loop rest (spec with sh_verify_phc = p)
       parse sha256 loop (f:rest)      spec       =  parse sha256 loop rest (spec with sh_files = ((sh_files spec) :: [f]))
@@ -558,8 +641,76 @@ fn :: finish sha256 files (Int, [String]) => Int String
       finish sha256 files (rc, lines)     =
         (rc, join sec lines lines (char from code 10))
 
+fn :: parse checklist line String => String String
+      parse checklist line line   =
+        | str starts with line "SHA256 (" = parse bsd check line line
+        | otherwise                       = parse rev check line line
+
+fn :: parse bsd check line String => String String
+      parse bsd check line line   =
+        close_i = find char idx line 8 (str len line) 41
+        eq_i = find char idx line close_i (str len line) 61
+        extract bsd check parts line close_i eq_i
+
+fn :: extract bsd check parts String Int Int => String String
+      extract bsd check parts line close_i eq_i =
+        | (close_i < 8) or (eq_i < 0) = ("", "")
+        | otherwise =
+          fname = str slice line 8 close_i
+          hex = trim lead spaces (str slice line (eq_i + 1) (str len line)) 0
+          (fname, hex)
+
+fn :: trim lead spaces String Int => String
+      trim lead spaces s      idx =
+        | idx >= (str len s)       = ""
+        | is ws (str char at s idx) = trim lead spaces s (idx + 1)
+        | otherwise                = str slice s idx (str len s)
+
+fn :: parse rev check line String => String String
+      parse rev check line line   =
+        sp_i = find char idx line 0 (str len line) 32
+        extract rev check parts line sp_i
+
+fn :: extract rev check parts String Int => String String
+      extract rev check parts line sp_i =
+        | sp_i <= 0 = ("", "")
+        | otherwise =
+          hex = str slice line 0 sp_i
+          fname = trim lead spaces (str slice line (sp_i + 1) (str len line)) 0
+          (fname, hex)
+
+fn :: verify one check line String => Int String
+      verify one check line line   =
+        pair = parse checklist line line
+        fname = fst pair
+        exp_hex = snd pair
+        verify parsed check fname exp_hex
+
+fn :: verify parsed check String String  => Int String
+      verify parsed check ""     _       =  (0, "")
+      verify parsed check fname  exp_hex =
+        | not (file readable check fname) = (1, "(SHA256) " + fname + ": FAILED")
+        | ct equal (sha256 file fname) exp_hex = (0, "(SHA256) " + fname + ": OK")
+        | otherwise = (1, "(SHA256) " + fname + ": FAILED")
+
+fn :: verify checklist lines [String] Int [String] => Int [String]
+      verify checklist lines [] rc acc = (rc, acc)
+      verify checklist lines (l:rest) rc acc =
+        | (str len (trim lead spaces l 0)) == 0 = verify checklist lines rest rc acc
+        | otherwise =
+          res = verify one check line l
+          verify checklist lines rest (merge sha256 rc rc (fst res)) (acc :: [snd res])
+
+fn :: evaluate sha256 checklist String => Int String
+      evaluate sha256 checklist cpath  =
+        | not (file readable check cpath) = (1, "sha256: " + cpath + ": No such file or directory")
+        | otherwise =
+          lines = split lines (read file cpath)
+          finish sha256 files (verify checklist lines lines 0 [])
+
 op :: evaluate sha256 Sha256Spec with String     => Int String
       evaluate sha256 spec       with stdin_data =
+        | (str len (sh_check_file spec)) > 0     = evaluate sha256 checklist (sh_check_file spec)
         | (str len (sh_verify_phc spec)) > 0     = verify sha256 phc spec stdin_data
         | sh_has_str spec                        = (0, format sha256 entry spec (sh_str spec) (compute digest for spec (sh_str spec)) True)
         | (sec str list len (sh_files spec)) > 0 = finish sha256 files (eval sha256 files spec (sh_files spec) 0 [])

@@ -213,6 +213,43 @@ fn :: test e2e binaries suite => ()
         _ = shell exec "rm -f /tmp/ut_jot1.out /tmp/ut_rs.in /tmp/ut_rs.out /tmp/ut_lam_a.in /tmp/ut_lam_b.in /tmp/ut_lam.out /tmp/ut_lam_cap.out /tmp/ut_lam_colon.in /tmp/ut_lam_t.out /tmp/ut_vis.in /tmp/ut_vis1.enc /tmp/ut_vis1.dec /tmp/ut_vis2.enc /tmp/ut_vis2.dec /tmp/ut_vis3.enc /tmp/ut_vis3.dec /tmp/ut_import.in /tmp/ut_import.out /tmp/ut_no_nl.in /tmp/ut_crlf.in /tmp/ut_crlf.out /tmp/ut_bin256.in /tmp/ut_bin256.enc /tmp/ut_bin256.dec /tmp/ut_jot_rs_pipe.out /tmp/ut_jot_lam_pipe.out /tmp/ut_4stage.out"
         ()
 
+fn :: test filter parity gaps suite => ()
+      test filter parity gaps suite =
+        nl = char from code 10
+        tab = char from code 9
+        _ = echo "=== 6. Testing BSD jot -r OS Entropy & vis/unvis -h (HTTP URI) / -m (MIME) Parity (ADR-0002) ==="
+        unseeded1 = evaluate jot (parse jot args ["-r", "12", "1", "1000000"])
+        unseeded2 = evaluate jot (parse jot args ["-r", "12", "1", "1000000"])
+        _ = assert false (check str eq unseeded1 unseeded2) "ADR-0002: unseeded jot -r draws real kernel entropy (two 12-item runs in 1..1000000 differ)"
+        seeded_a = evaluate jot (parse jot args ["-r", "6", "10", "99", "77"])
+        seeded_b = evaluate jot (parse jot args ["-r", "6", "10", "99", "77"])
+        seeded_c = evaluate jot (parse jot args ["-r", "6", "10", "99", "88"])
+        _ = assert str eq seeded_a seeded_b "ADR-0002: seeded jot -r with explicit 4th arg 77 is deterministic"
+        _ = assert false (check str eq seeded_a seeded_c) "ADR-0002: seeded jot -r with different seeds (77 vs 88) produces different sequences"
+        r_comb = evaluate jot (parse jot args ["-r", "-n", "-s", ":", "-w", "id_%02d", "4", "10", "99", "42"])
+        _ = assert int equals (str len r_comb) 23 "ADR-0002 combination: jot -r -n -s : -w id_%02d 4 10 99 42 exact formatted length"
+        uri_in = "hello world/path?k=1&v=a+b"
+        uri_enc = encode vis uri_in with (parse vis args ["-h"])
+        _ = assert true (str contains uri_enc "%20") "ADR-0002: vis -h encodes space as %20"
+        _ = assert true ((str contains uri_enc "%3f") or (str contains uri_enc "%3F")) "ADR-0002: vis -h encodes '?' as %3f"
+        _ = assert true ((str contains uri_enc "%3d") or (str contains uri_enc "%3D")) "ADR-0002: vis -h encodes '=' as %3d"
+        uri_dec = decode unvis uri_enc with (parse unvis args ["-h"])
+        _ = assert str eq uri_dec uri_in "ADR-0002: unvis -h(vis -h(S)) roundtrips URI string losslessly"
+        mime_in = "key=val" + tab + "line1" + nl + "100%=ok"
+        mime_enc = encode vis mime_in with (parse vis args ["-m"])
+        _ = assert true (str contains mime_enc "=3D") "ADR-0002: vis -m encodes '=' as =3D uppercase hex"
+        _ = assert true (str contains mime_enc "=09") "ADR-0002: vis -m encodes TAB as =09"
+        mime_dec = decode unvis mime_enc with (parse unvis args ["-m"])
+        _ = assert str eq mime_dec mime_in "ADR-0002: unvis -m(vis -m(S)) roundtrips MIME Quoted-Printable string losslessly"
+        mime_soft = decode unvis ("hello=" + nl + "world=3D42") with (parse unvis args ["-m"])
+        _ = assert str eq mime_soft "helloworld=42" "ADR-0002: unvis -m strips soft line break (=\\n) and decodes =3D"
+        _ = shell exec "printf 'a b?c=d&e' | ./target/vis -h | ./target/unvis -h > /tmp/ut_vis_h.out"
+        _ = assert str eq (read file "/tmp/ut_vis_h.out") "a b?c=d&e" "E2E pipeline: target/vis -h | target/unvis -h lossless roundtrip"
+        _ = shell exec "printf 'x=1\\ty=2' | ./target/vis -m | ./target/unvis -m > /tmp/ut_vis_m.out"
+        _ = assert str eq (read file "/tmp/ut_vis_m.out") ("x=1" + tab + "y=2") "E2E pipeline: target/vis -m | target/unvis -m lossless roundtrip"
+        _ = shell exec "rm -f /tmp/ut_vis_h.out /tmp/ut_vis_m.out"
+        ()
+
 fn :: main => ()
       main =
         _ = test jot suite
@@ -220,4 +257,5 @@ fn :: main => ()
         _ = test lam suite
         _ = test vis unvis suite
         _ = test e2e binaries suite
-        echo "All 111 Tier 1 BSD Filter unit & E2E binary assertions passed!"
+        _ = test filter parity gaps suite
+        echo "All 124 Tier 1 BSD Filter unit & E2E binary assertions passed!"

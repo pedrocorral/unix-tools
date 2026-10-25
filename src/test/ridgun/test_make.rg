@@ -88,10 +88,36 @@ fn :: test make mtime and e2e => ()
         _ = shell exec "rm -rf /tmp/ut_mk_dir /tmp/ut_mk_c.out"
         ()
 
+fn :: test make conditionals functions and env override => ()
+      test make conditionals functions and env override =
+        nl = char from code 10
+        tab = char from code 9
+        _ = echo "=== 5. make(1) Conditionals (.if/ifdef/ifeq), != Shell Assign, $(shell/patsubst/subst/wildcard) & -e Flag (ADR-0002) ==="
+        mk_bsd_if = "MODE = release" + nl + ".if $(MODE) == \"release\"" + nl + "OPT = -O3" + nl + ".else" + nl + "OPT = -O0" + nl + ".endif" + nl + "all:" + nl + tab + "cc $(OPT)" + nl
+        res_bsd1 = evaluate make mk_bsd_if with (parse make args ["-n"])
+        _ = assert str eq (join with (snd res_bsd1) "") "cc -O3" "ADR-0002 make BSD .if $(MODE) == \"release\" selects .if branch (-O3)"
+        res_bsd2 = evaluate make mk_bsd_if with (parse make args ["-n", "MODE=debug"])
+        _ = assert str eq (join with (snd res_bsd2) "") "cc -O0" "ADR-0002 make BSD .if with CLI override MODE=debug selects .else branch (-O0)"
+        mk_gnu_if = "FEATURE = yes" + nl + "ifdef FEATURE" + nl + "ifeq ($(FEATURE),yes)" + nl + "FLAGS = -DFEATURE_ENABLED" + nl + "else" + nl + "FLAGS = -DFEATURE_OTHER" + nl + "endif" + nl + "else" + nl + "FLAGS = -DNO_FEATURE" + nl + "endif" + nl + "ifndef MISSING_VAR" + nl + "FLAGS += -DMISSING_OK" + nl + "endif" + nl + "all:" + nl + tab + "build $(FLAGS)" + nl
+        res_gnu = evaluate make mk_gnu_if with (parse make args ["-n"])
+        _ = assert str eq (join with (snd res_gnu) "") "build -DFEATURE_ENABLED -DMISSING_OK" "ADR-0002 make nested GNU ifdef / ifeq / ifndef / else / endif conditionals"
+        mk_sh_asn = "REV != printf 'v1.2.3\\n'" + nl + "SH_OUT = $(shell printf 'from_shell_fn\\n')" + nl + "SRCS = a.c b.c" + nl + "OBJS = $(patsubst %.c,%.o,$(SRCS))" + nl + "CLEAN = $(subst .o,.d,$(OBJS))" + nl + "all:" + nl + tab + "echo $(REV) $(SH_OUT) $(OBJS) : $(CLEAN)" + nl
+        res_fn = evaluate make mk_sh_asn with (parse make args ["-n"])
+        _ = assert str eq (join with (snd res_fn) "") "echo v1.2.3 from_shell_fn a.o b.o : a.d b.d" "ADR-0002 make != shell assignment and $(shell), $(patsubst), $(subst) functions"
+        _ = sys setenv "MK_ENV_CC" "clang-from-env"
+        mk_env = "MK_ENV_CC = gcc-from-makefile" + nl + "all:" + nl + tab + "$(MK_ENV_CC) main.c" + nl
+        res_no_e = evaluate make mk_env with (parse make args ["-n"])
+        _ = assert str eq (join with (snd res_no_e) "") "gcc-from-makefile main.c" "ADR-0002 make without -e: Makefile assignment overrides environment variable"
+        res_with_e = evaluate make mk_env with (parse make args ["-n", "-e"])
+        _ = sys setenv "MK_ENV_CC" ""
+        _ = assert str eq (join with (snd res_with_e) "") "clang-from-env main.c" "ADR-0002 make -e: environment variable overrides Makefile assignment"
+        ()
+
 fn :: main => ()
       main =
         _ = test make variables and assignments
         _ = test make auto vars and pattern rules
         _ = test make prefixes flags include
         _ = test make mtime and e2e
-        echo "All 21 exhaustive BSD make(1) assertions in test_make.rg passed!"
+        _ = test make conditionals functions and env override
+        echo "All 27 exhaustive BSD make(1) assertions in test_make.rg passed!"

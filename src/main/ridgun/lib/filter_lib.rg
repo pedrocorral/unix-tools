@@ -12,7 +12,7 @@ type RsSpec = r_rows: Int, r_cols: Int, r_transpose: Bool, r_in_sep: String, r_o
 
 type LamCol = l_sep: String, l_min: Int, l_max: Int, l_pad_eof: Bool, l_lines: [String]
 
-type VisSpec = v_octal: Bool, v_cstyle: Bool, v_tab: Bool, v_space: Bool, v_newline: Bool, v_nobs: Bool, v_mark_nl: Bool, v_none: Bool, v_fold: Int, v_files: [String]
+type VisSpec = v_octal: Bool, v_cstyle: Bool, v_tab: Bool, v_space: Bool, v_newline: Bool, v_nobs: Bool, v_mark_nl: Bool, v_none: Bool, v_http: Bool, v_mime: Bool, v_fold: Int, v_files: [String]
 
 -- ============================================================================
 -- Generic List, Integer & String Helpers
@@ -439,12 +439,27 @@ op :: evaluate jot JotSpec => String
         items = select jot items (j_random spec) reps begin_val end_val step_val spec
         join with items (j_sep spec)
 
+fn :: draw os entropy seed => Int
+      draw os entropy seed =
+        rbytes = snd (sys random bytes list 4)
+        b0 = int list nth rbytes 0
+        b1 = int list nth rbytes 1
+        b2 = int list nth rbytes 2
+        b3 = int list nth rbytes 3
+        ns = abs int ((sys monotonic ns) % 1000000007)
+        raw = ((b0 * 16777216) + (b1 * 65536) + (b2 * 256) + b3 + ns) % 2147483647
+        max int 1 (abs int raw)
+
+fn :: resolve jot seed Bool  Int      => Int
+      resolve jot seed True  _        =  draw os entropy seed
+      resolve jot seed False step_val =  max int 1 (abs int step_val)
+
 fn :: select jot items Bool Int Int Int Int JotSpec => [String]
       select jot items False reps begin_val end_val step_val spec = gen jot items 0 reps begin_val step_val spec []
       select jot items True reps begin_val end_val step_val spec =
         lo = min int begin_val end_val
         hi = max int begin_val end_val
-        seed = max int 1 (abs int step_val)
+        seed = resolve jot seed (is omitted (j_step spec)) step_val
         gen jot random 0 reps lo hi seed spec []
 
 fn :: min int Int Int => Int
@@ -975,10 +990,13 @@ fn :: parse lam file String [String] String String Int Int Int Int Bool Bool Int
 -- ============================================================================
 
 fn :: default vis spec => VisSpec
-      default vis spec =  VisSpec False True False False False False False False 0 []
+      default vis spec =  VisSpec False True False False False False False False False False 0 []
 
 op :: parse vis args [String] => VisSpec
       parse vis args args     =  parse vis loop args (default vis spec)
+
+op :: parse unvis args [String] => VisSpec
+      parse unvis args args     =  parse vis loop args (default vis spec)
 
 fn :: apply vis flag char Int VisSpec => VisSpec
       apply vis flag char c spec =
@@ -990,6 +1008,8 @@ fn :: apply vis flag char Int VisSpec => VisSpec
         | c == 98 = spec with v_nobs = True
         | c == 108 = spec with v_mark_nl = True
         | c == 110 = spec with v_none = True
+        | c == 104 = spec with v_http = True
+        | c == 109 = spec with v_mime = True
         | c == 102 = spec with v_fold = 80
         | otherwise = spec
 
@@ -1028,8 +1048,33 @@ fn :: to octal3 Int VisSpec => String
         d0 = c % 8
         (vis prefix spec) + (int to str d2) + (int to str d1) + (int to str d0)
 
+fn :: to hex2 Int Bool  => String
+      to hex2 c   upper =
+        d1 = (c / 16) % 16
+        d0 = c % 16
+        (hex digit d1 upper) + (hex digit d0 upper)
+
+fn :: is http safe Int => Bool
+      is http safe c   =
+        | (c >= 48) and (c <= 57) = True
+        | (c >= 65) and (c <= 90) = True
+        | (c >= 97) and (c <= 122) = True
+        | (c == 36) or (c == 45) or (c == 95) or (c == 46) or (c == 43) = True
+        | (c == 33) or (c == 42) or (c == 39) or (c == 40) or (c == 41) or (c == 44) = True
+        | otherwise = False
+
+fn :: is mime safe Int => Bool
+      is mime safe c   =
+        | c == 10 = True
+        | (c == 32) or ((c >= 33) and (c <= 60)) or ((c >= 62) and (c <= 126)) = True
+        | otherwise = False
+
 fn :: encode vis code Int VisSpec => String
       encode vis code c   spec    =
+        | (v_http spec) and (is http safe c) = char from code c
+        | v_http spec = "%" + (to hex2 c False)
+        | (v_mime spec) and (is mime safe c) = char from code c
+        | v_mime spec = "=" + (to hex2 c True)
         | (c == 92) and (v_nobs spec) = bslash
         | c == 92 = bslash + bslash
         | v_none spec = char from code c
@@ -1078,6 +1123,9 @@ op :: vis encode String with VisSpec => String
       vis encode s      with spec    =
         encoded = vis encode loop s 0 (str len s) spec ""
         apply vis fold encoded (v_fold spec)
+
+op :: encode vis String with VisSpec => String
+      encode vis s      with spec    =  vis encode s with spec
 
 fn :: apply vis fold String  Int    => String
       apply vis fold encoded fold_w =
@@ -1170,6 +1218,60 @@ fn :: unvis octal1 String Int Int String => String
 
 op :: unvis decode String => String
       unvis decode s      =  unvis loop s 0 (str len s) ""
+
+fn :: unvis http loop String Int Int String => String
+      unvis http loop s idx len acc =
+        | idx >= len = acc
+        | ((str char at s idx) == 37) and ((idx + 2) < len) and (is hex digit (str char at s (idx + 1))) and (is hex digit (str char at s (idx + 2))) =
+          h1 = hex val (str char at s (idx + 1))
+          h0 = hex val (str char at s (idx + 2))
+          (unvis http loop s (idx + 3) len (acc + (char from code ((h1 * 16) + h0))))
+        | ((str char at s idx) == 92) and ((idx + 1) < len) = unvis after bslash s idx len acc
+        | otherwise = unvis http loop s (idx + 1) len (acc + (str slice s idx (idx + 1)))
+
+fn :: unvis mime loop String Int Int String => String
+      unvis mime loop s idx len acc =
+        | idx >= len = acc
+        | ((str char at s idx) == 61) and ((idx + 1) < len) and ((str char at s (idx + 1)) == 10) = unvis mime loop s (idx + 2) len acc
+        | ((str char at s idx) == 61) and ((idx + 2) < len) and ((str char at s (idx + 1)) == 13) and ((str char at s (idx + 2)) == 10) = unvis mime loop s (idx + 3) len acc
+        | ((str char at s idx) == 61) and ((idx + 2) < len) and (is hex digit (str char at s (idx + 1))) and (is hex digit (str char at s (idx + 2))) =
+          h1 = hex val (str char at s (idx + 1))
+          h0 = hex val (str char at s (idx + 2))
+          (unvis mime loop s (idx + 3) len (acc + (char from code ((h1 * 16) + h0))))
+        | ((str char at s idx) == 92) and ((idx + 1) < len) = unvis after bslash s idx len acc
+        | otherwise = unvis mime loop s (idx + 1) len (acc + (str slice s idx (idx + 1)))
+
+op :: decode unvis String with VisSpec => String
+      decode unvis s      with spec    =
+        | v_http spec = unvis http loop s 0 (str len s) ""
+        | v_mime spec = unvis mime loop s 0 (str len s) ""
+        | otherwise = unvis loop s 0 (str len s) ""
+
+fn :: unvis http bytes loop String Int Int [Int] => [Int]
+      unvis http bytes loop s idx len acc =
+        | idx >= len = acc
+        | ((str char at s idx) == 37) and ((idx + 2) < len) and (is hex digit (str char at s (idx + 1))) and (is hex digit (str char at s (idx + 2))) =
+          h1 = hex val (str char at s (idx + 1))
+          h0 = hex val (str char at s (idx + 2))
+          (unvis http bytes loop s (idx + 3) len (acc :: [(h1 * 16) + h0]))
+        | otherwise = unvis http bytes loop s (idx + 1) len (acc :: [str char at s idx])
+
+fn :: unvis mime bytes loop String Int Int [Int] => [Int]
+      unvis mime bytes loop s idx len acc =
+        | idx >= len = acc
+        | ((str char at s idx) == 61) and ((idx + 1) < len) and ((str char at s (idx + 1)) == 10) = unvis mime bytes loop s (idx + 2) len acc
+        | ((str char at s idx) == 61) and ((idx + 2) < len) and ((str char at s (idx + 1)) == 13) and ((str char at s (idx + 2)) == 10) = unvis mime bytes loop s (idx + 3) len acc
+        | ((str char at s idx) == 61) and ((idx + 2) < len) and (is hex digit (str char at s (idx + 1))) and (is hex digit (str char at s (idx + 2))) =
+          h1 = hex val (str char at s (idx + 1))
+          h0 = hex val (str char at s (idx + 2))
+          (unvis mime bytes loop s (idx + 3) len (acc :: [(h1 * 16) + h0]))
+        | otherwise = unvis mime bytes loop s (idx + 1) len (acc :: [str char at s idx])
+
+op :: unvis decode bytes with String VisSpec => [Int]
+      unvis decode bytes with s      spec    =
+        | v_http spec = unvis http bytes loop s 0 (str len s) []
+        | v_mime spec = unvis mime bytes loop s 0 (str len s) []
+        | otherwise = unvis bytes loop s 0 (str len s) []
 
 fn :: vis encode bytes loop [Int] VisSpec String => String
       vis encode bytes loop [] spec acc = acc

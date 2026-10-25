@@ -17,6 +17,7 @@ fn :: read sha stdin loop String => String
 
 fn :: read stdin if needed Sha256Spec => String
       read stdin if needed spec       =
+        | (str len (sh_check_file spec)) > 0     = ""
         | sh_has_str spec                        = ""
         | (sec str list len (sh_files spec)) > 0 = ""
         | otherwise                              = read sha stdin loop ""

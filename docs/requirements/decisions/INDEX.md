@@ -3,4 +3,5 @@ Accepted ADRs are settled: do not re-open a decision ("should we switch to Mongo
 
 | Path | What | Status |
 |---|---|---|
-| `ADR-0001-adopt-aix-and-choose-stack.md` | Adopt AIX; choose language/framework/persistence | proposed (fill in) |
+| `ADR-0001-adopt-aix-and-choose-stack.md` | Adopt AIX; choose language/framework/persistence | accepted |
+| `ADR-0002-full-bsd-parity-specification.md` | Full BSD/POSIX parity specification and elimination of all in-memory shortcuts across all 17 utilities | accepted |

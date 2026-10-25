@@ -16,17 +16,17 @@ type MakeRule = MRule String [String] [String]
 
 type MakeVar = MVar String String
 
-type MakeSpec = mk_file: String, mk_dir: String, mk_dry_run: Bool, mk_always: Bool, mk_silent: Bool, mk_ignore_err: Bool, mk_keep_going: Bool, mk_question: Bool, mk_jobs: Int, mk_cli_vars: [MakeVar], mk_targets: [String]
+type MakeSpec = mk_file: String, mk_dir: String, mk_dry_run: Bool, mk_always: Bool, mk_silent: Bool, mk_ignore_err: Bool, mk_keep_going: Bool, mk_question: Bool, mk_env_override: Bool, mk_jobs: Int, mk_cli_vars: [MakeVar], mk_targets: [String]
 
-type Redir = RedirIn String | RedirOut String | RedirAppend String | RedirErrToOut | RedirHeredoc String Bool
+type Redir = RedirIn String | RedirOut String | RedirAppend String | RedirErrOut String | RedirErrAppend String | RedirErrToOut | RedirOutToErr | RedirHeredoc String Bool
 
 type ShNode = ShSimple [String] [Redir] | ShPipe ShNode ShNode | ShAnd ShNode ShNode | ShOr ShNode ShNode | ShSeq ShNode ShNode
 
-expand type ShNode = ShSubshell ShNode | ShBrace ShNode | ShNot ShNode | ShIf ShNode ShNode ShNode | ShWhile ShNode ShNode | ShUntil ShNode ShNode | ShFor String [String] Bool ShNode | ShCase String [([String], ShNode)] | ShFuncDef String ShNode | ShAssign String String
+expand type ShNode = ShSubshell ShNode | ShBrace ShNode | ShNot ShNode | ShBg ShNode | ShIf ShNode ShNode ShNode | ShWhile ShNode ShNode | ShUntil ShNode ShNode | ShFor String [String] Bool ShNode | ShCase String [([String], ShNode)] | ShFuncDef String ShNode | ShAssign String String
 
 type ShFunc = SFunc String ShNode
 
-type ShEnv = env_vars: [MakeVar], env_readonly: [String], env_funcs: [ShFunc], env_locals: [String], env_pos: [String], env_status: Int, env_out: String, env_stdin: String, env_exited: Bool, env_returning: Bool, env_break_cnt: Int, env_cont_cnt: Int, env_errexit: Bool, env_nounset: Bool, env_noglob: Bool, env_noerrexit_ctx: Bool, env_exit_trap: String
+type ShEnv = env_vars: [MakeVar], env_readonly: [String], env_funcs: [ShFunc], env_locals: [String], env_pos: [String], env_status: Int, env_out: String, env_stdin: String, env_exited: Bool, env_returning: Bool, env_break_cnt: Int, env_cont_cnt: Int, env_errexit: Bool, env_nounset: Bool, env_noglob: Bool, env_noerrexit_ctx: Bool, env_exit_trap: String, env_bg_pid: Int, env_sig_traps: [MakeVar]
 
 type TimeoutSpec = to_sig: String, to_kill_ms: Int, to_preserve: Bool, to_foreground: Bool, to_invalid: Bool, to_dur_ms: Int, to_cmd: String, to_args: [String]
 
@@ -345,13 +345,152 @@ expand make dollar s idx len vars cur_target first_dep all_deps stem depth acc =
         | (str char at s (idx + 1)) == 123 = expand make delim s (idx + 2) len 125 vars cur_target first_dep all_deps stem depth acc
         | otherwise                        = expand make loop s (idx + 1) len vars cur_target first_dep all_deps stem depth (acc + "$")
 
+fn :: select make open ch Int => Int
+      select make open ch 41  =  40
+      select make open ch _   =  123
+
+fn :: read until delim balanced String Int Int Int Int Int String => String Int
+      read until delim balanced s idx len open_ch close_ch depth acc =
+        | idx >= len = (acc, len)
+        | (str char at s idx) == close_ch =
+          | depth <= 1 = (acc, idx + 1)
+          | otherwise  = read until delim balanced s (idx + 1) len open_ch close_ch (depth - 1) (acc + (str slice s idx (idx + 1))) |.
+        | (str char at s idx) == open_ch =
+      read until delim balanced s (idx + 1) len open_ch close_ch (depth + 1) (acc + (str slice s idx (idx + 1)))
+        | otherwise =
+          read until delim balanced s (idx + 1) len open_ch close_ch depth (acc + (str slice s idx (idx + 1)))
+
+fn :: normalize make shell nl String Int Int String => String
+      normalize make shell nl s idx len acc =
+        | idx >= len                = acc
+        | (str char at s idx) == 13 = normalize make shell nl s (idx + 1) len acc
+        | (str char at s idx) == 10 = normalize make shell nl s (idx + 1) len (acc + " ")
+        | otherwise                 = normalize make shell nl s (idx + 1) len (acc + (str slice s idx (idx + 1)))
+
+fn :: normalize make shell out String => String
+      normalize make shell out raw    =
+        trimmed = strip trailing newlines raw
+        normalize make shell nl trimmed 0 (str len trimmed) ""
+
+fn :: replace all str loop String Int Int String Int String String => String
+      replace all str loop s idx slen from_s flen to_s acc =
+        | idx >= slen                                 = acc
+        | flen <= 0                                   = s
+        | ((idx + flen) <= slen) and ((str slice s idx (idx + flen)) == from_s) =
+      replace all str loop s (idx + flen) slen from_s flen to_s (acc + to_s)
+        | otherwise =
+          replace all str loop s (idx + 1) slen from_s flen to_s (acc + (str slice s idx (idx + 1)))
+
+fn :: apply make patsubst words [String] String String [String] => [String]
+      apply make patsubst words [] _ _ acc = acc
+      apply make patsubst words (w:rest) pat repl acc =
+        m = match pattern target pat w
+        nw = apply make patsubst word w repl m
+        apply make patsubst words rest pat repl (acc :: [nw])
+
+fn :: apply make patsubst word String String (Bool, String) => String
+      apply make patsubst word _ repl (True, stem) = subst pattern stem repl stem
+      apply make patsubst word w _ (False, _) = w
+
+fn :: eval make wildcard String => String
+      eval make wildcard pat    =
+        slash_i = find last char idx pat ((str len pat) - 1) 47
+        eval make wildcard split pat slash_i
+
+fn :: eval make wildcard split String Int => String
+      eval make wildcard split pat slash_i =
+        | slash_i < 0 =
+          matches = filter glob entries (sort str list (list dir (sys getcwd)) []) pat []
+          join with matches " "
+        | otherwise =
+          dir_p = select wildcard dir (str slice pat 0 slash_i)
+          base_p = str slice pat (slash_i + 1) (str len pat)
+          pref = (str slice pat 0 slash_i) + "/"
+          matches = filter glob entries (sort str list (list dir dir_p) []) base_p []
+          join with (prepend dir prefix matches pref []) " "
+
+fn :: select wildcard dir String => String
+      select wildcard dir ""     =  "/"
+      select wildcard dir d      =  d
+
+fn :: prepend dir prefix [String] String [String] => [String]
+      prepend dir prefix [] _ acc = acc
+      prepend dir prefix (x:rest) pref acc = prepend dir prefix rest pref (acc :: [pref + x])
+
+fn :: eval make builtin fn String [MakeVar] String String String String Int => Bool String
+      eval make builtin fn vname vars cur_target first_dep all_deps stem depth =
+        | str starts with vname "shell " =
+          raw_cmd = trim ws (str slice vname 6 (str len vname))
+          exp_cmd = expand make full raw_cmd vars cur_target first_dep all_deps stem (depth + 1)
+          res = run shell script exp_cmd with []
+          (True, normalize make shell out (fst res))
+        | str starts with vname "wildcard " =
+          raw_pat = trim ws (str slice vname 9 (str len vname))
+          exp_pat = expand make full raw_pat vars cur_target first_dep all_deps stem (depth + 1)
+          (True, eval make wildcard exp_pat)
+        | str starts with vname "patsubst " =
+          raw_args = str slice vname 9 (str len vname)
+          c1 = find char idx raw_args 0 (str len raw_args) 44
+          eval make patsubst args raw_args c1 vars cur_target first_dep all_deps stem depth
+        | str starts with vname "subst " =
+          raw_args = str slice vname 6 (str len vname)
+          c1 = find char idx raw_args 0 (str len raw_args) 44
+          eval make subst args raw_args c1 vars cur_target first_dep all_deps stem depth
+        | otherwise = (False, "")
+
+fn :: eval make patsubst args String Int [MakeVar] String String String String Int => Bool String
+      eval make patsubst args raw_args c1 vars cur_target first_dep all_deps stem depth =
+        | c1 < 0 = (True, "")
+        | otherwise =
+          rem = str slice raw_args (c1 + 1) (str len raw_args)
+          c2 = find char idx rem 0 (str len rem) 44
+          eval make patsubst c2 (str slice raw_args 0 c1) rem c2 vars cur_target first_dep all_deps stem depth
+
+fn :: eval make patsubst c2 String String Int [MakeVar] String String String String Int => Bool String
+      eval make patsubst c2 a1 rem c2 vars cur_target first_dep all_deps stem depth =
+        | c2 < 0 = (True, "")
+        | otherwise =
+          a2 = str slice rem 0 c2
+          a3 = str slice rem (c2 + 1) (str len rem)
+          pat = trim ws (expand make full a1 vars cur_target first_dep all_deps stem (depth + 1))
+          repl = trim ws (expand make full a2 vars cur_target first_dep all_deps stem (depth + 1))
+          txt = expand make full a3 vars cur_target first_dep all_deps stem (depth + 1)
+          words = split whitespace txt
+          (True, join with (apply make patsubst words words pat repl []) " ")
+
+fn :: eval make subst args String Int [MakeVar] String String String String Int => Bool String
+      eval make subst args raw_args c1 vars cur_target first_dep all_deps stem depth =
+        | c1 < 0 = (True, "")
+        | otherwise =
+          rem = str slice raw_args (c1 + 1) (str len raw_args)
+          c2 = find char idx rem 0 (str len rem) 44
+          eval make subst c2 (str slice raw_args 0 c1) rem c2 vars cur_target first_dep all_deps stem depth
+
+fn :: eval make subst c2 String String Int [MakeVar] String String String String Int => Bool String
+      eval make subst c2 a1 rem c2 vars cur_target first_dep all_deps stem depth =
+        | c2 < 0 = (True, "")
+        | otherwise =
+          a2 = str slice rem 0 c2
+          a3 = str slice rem (c2 + 1) (str len rem)
+          from_s = expand make full a1 vars cur_target first_dep all_deps stem (depth + 1)
+          to_s = expand make full a2 vars cur_target first_dep all_deps stem (depth + 1)
+          txt = expand make full a3 vars cur_target first_dep all_deps stem (depth + 1)
+          (True, replace all str loop txt 0 (str len txt) from_s (str len from_s) to_s "")
+
+fn :: resolve make delim val (Bool, String) String [MakeVar] String String String String Int => String
+      resolve make delim val (True, fn_val) _ _ _ _ _ _ _ = fn_val
+      resolve make delim val (False, _) vname vars cur_target first_dep all_deps stem depth =
+        raw_val = lookup var vars vname
+expand make full raw_val vars cur_target first_dep all_deps stem (depth + 1)
+
 fn :: expand make delim String Int Int Int [MakeVar] String String String String Int String => String
 expand make delim s idx len close_ch vars cur_target first_dep all_deps stem depth acc =
-  pair = read until char s idx len close_ch ""
+  open_ch = select make open ch close_ch
+  pair = read until delim balanced s idx len open_ch close_ch 1 ""
   vname = fst pair
   next_idx = snd pair
-  raw_val = lookup var vars vname
-  val = expand make full raw_val vars cur_target first_dep all_deps stem (depth + 1)
+  fn_res = eval make builtin fn vname vars cur_target first_dep all_deps stem depth
+  val = resolve make delim val fn_res vname vars cur_target first_dep all_deps stem depth
 expand make loop s next_idx len vars cur_target first_dep all_deps stem depth (acc + val)
 
 fn :: read until char String Int Int Int String => String Int
@@ -367,7 +506,7 @@ fn :: find char idx String Int Int Int => Int
         | otherwise                        = find char idx s (idx + 1) len target_ch
 
 op :: parse make args [String] => MakeSpec
-      parse make args args     =  parse make args loop args (MakeSpec "Makefile" "" False False False False False False 1 [] [])
+      parse make args args     =  parse make args loop args (MakeSpec "Makefile" "" False False False False False False False 1 [] [])
 
 fn :: parse make args loop [String] MakeSpec => MakeSpec
       parse make args loop [] spec = spec
@@ -378,6 +517,7 @@ fn :: parse make args loop [String] MakeSpec => MakeSpec
         | arg == "-i" = parse make args loop rest (spec with mk_ignore_err = True)
         | arg == "-k" = parse make args loop rest (spec with mk_keep_going = True)
         | arg == "-q" = parse make args loop rest (spec with mk_question = True)
+        | arg == "-e" = parse make args loop rest (spec with mk_env_override = True)
         | arg == "-f" = parse make flag f rest spec
         | arg == "-C" = parse make flag c rest spec
         | arg == "-j" = parse make flag j rest spec
@@ -459,51 +599,194 @@ fn :: load optional include String => [String]
         | file exists path = join make continuations (split lines (read file path)) "" []
         | otherwise        = []
 
+fn :: strip make outer quotes String => String
+      strip make outer quotes s      =
+        slen = str len s
+        strip make outer quotes len s slen
+
+fn :: strip make outer quotes len String Int => String
+      strip make outer quotes len s slen =
+        | slen < 2 = s
+        | ((str char at s 0) == 34) and ((str char at s (slen - 1)) == 34) = str slice s 1 (slen - 1)
+        | ((str char at s 0) == 39) and ((str char at s (slen - 1)) == 39) = str slice s 1 (slen - 1)
+        | otherwise = s
+
+fn :: find sub str idx String String Int Int Int => Int
+      find sub str idx s sub idx slen nlen =
+        | (idx + nlen) > slen                   = 0 - 1
+        | (str slice s idx (idx + nlen)) == sub = idx
+        | otherwise                             = find sub str idx s sub (idx + 1) slen nlen
+
+fn :: eval make bsd cond String [MakeVar] => Bool
+      eval make bsd cond expr vars =
+        | (str starts with expr "!defined(") and ((str char at expr ((str len expr) - 1)) == 41) =
+          vname = trim ws (str slice expr 9 ((str len expr) - 1))
+          (str len (lookup var vars vname)) == 0
+        | (str starts with expr "defined(") and ((str char at expr ((str len expr) - 1)) == 41) =
+          vname = trim ws (str slice expr 8 ((str len expr) - 1))
+          (str len (lookup var vars vname)) > 0
+        | otherwise =
+          eq_pos = find sub str idx expr "==" 0 (str len expr) 2
+          ne_pos = find sub str idx expr "!=" 0 (str len expr) 2
+          eval make bsd cmp expr vars eq_pos ne_pos
+
+fn :: eval make bsd cmp String [MakeVar] Int Int => Bool
+      eval make bsd cmp expr vars eq_pos ne_pos =
+        | eq_pos >= 0 =
+          lhs = strip make outer quotes (trim ws (expand make vars (str slice expr 0 eq_pos) vars "" ""))
+          rhs = strip make outer quotes (trim ws (expand make vars (str slice expr (eq_pos + 2) (str len expr)) vars "" ""))
+          lhs == rhs
+        | ne_pos >= 0 =
+          lhs = strip make outer quotes (trim ws (expand make vars (str slice expr 0 ne_pos) vars "" ""))
+          rhs = strip make outer quotes (trim ws (expand make vars (str slice expr (ne_pos + 2) (str len expr)) vars "" ""))
+          lhs != rhs
+        | otherwise =
+          val = strip make outer quotes (trim ws (expand make vars expr vars "" ""))
+          ((str len val) > 0) and (val != "0")
+
+fn :: eval make gnu eq String [MakeVar] Bool => Bool
+      eval make gnu eq raw_arg vars want_eq =
+        | ((str len raw_arg) >= 2) and (str starts with raw_arg "(") and ((str char at raw_arg ((str len raw_arg) - 1)) == 41) =
+          inner = str slice raw_arg 1 ((str len raw_arg) - 1)
+          c_idx = find char idx inner 0 (str len inner) 44
+          eval make gnu comma inner c_idx vars want_eq
+        | otherwise = False
+
+fn :: cmp make eq bool String String Bool => Bool
+      cmp make eq bool a b True = a == b
+      cmp make eq bool a b False = a != b
+
+fn :: eval make gnu comma String Int [MakeVar] Bool => Bool
+      eval make gnu comma inner c_idx vars want_eq =
+        | c_idx < 0 = False
+        | otherwise =
+          a = strip make outer quotes (trim ws (expand make vars (str slice inner 0 c_idx) vars "" ""))
+          b = strip make outer quotes (trim ws (expand make vars (str slice inner (c_idx + 1) (str len inner)) vars "" ""))
+          cmp make eq bool a b want_eq
+
+fn :: is make cond active [(Bool, Bool, Bool)] => Bool
+      is make cond active []                   =  True
+      is make cond active (top:_)              =  fst3 top
+
+fn :: pop make cond [(Bool, Bool, Bool)] => [(Bool, Bool, Bool)]
+      pop make cond []                   =  []
+      pop make cond (_:rest)             =  rest
+
+fn :: flip make cond else [(Bool, Bool, Bool)] => [(Bool, Bool, Bool)]
+      flip make cond else []                   =  []
+      flip make cond else (top:rest)           =
+        seen = snd3 top
+        p_act = trd3 top
+        [(p_act and (not seen), True, p_act)] :: rest
+
+fn :: step make cond elif branch Bool Bool [(Bool, Bool, Bool)] String [MakeVar] => [(Bool, Bool, Bool)]
+      step make cond elif branch seen p_act rest expr vars =
+        | (not p_act) or seen = [(False, True, p_act)] :: rest
+        | otherwise =
+          c = eval make bsd cond expr vars
+          [(c, c, True)] :: rest
+
+fn :: step make cond elif [(Bool, Bool, Bool)] String [MakeVar] => [(Bool, Bool, Bool)]
+      step make cond elif [] _ _ = []
+      step make cond elif (top:rest) expr vars =
+        step make cond elif branch (snd3 top) (trd3 top) rest expr vars
+
+fn :: step make cond push branch Bool [(Bool, Bool, Bool)] Bool => [(Bool, Bool, Bool)]
+      step make cond push branch False stack _ = [(False, True, False)] :: stack
+      step make cond push branch True stack c = [(c, c, True)] :: stack
+
+fn :: step make cond push [(Bool, Bool, Bool)] Bool => [(Bool, Bool, Bool)]
+      step make cond push stack c =
+        step make cond push branch (is make cond active stack) stack c
+
+fn :: check make cond directive String [MakeVar] [(Bool, Bool, Bool)] => Bool [(Bool, Bool, Bool)]
+      check make cond directive tline vars stack =
+        | (tline == ".endif") or (tline == "endif") = (True, pop make cond stack)
+        | (tline == ".else") or (tline == "else")   = (True, flip make cond else stack)
+        | str starts with tline ".elif " =
+          expr = trim ws (str slice tline 6 (str len tline))
+          (True, step make cond elif stack expr vars)
+        | str starts with tline ".if " =
+          expr = trim ws (str slice tline 4 (str len tline))
+          c = eval make bsd cond expr vars
+          (True, step make cond push stack c)
+        | str starts with tline "ifdef " =
+          vname = trim ws (expand make vars (trim ws (str slice tline 6 (str len tline))) vars "" "")
+          c = (str len (lookup var vars vname)) > 0
+          (True, step make cond push stack c)
+        | str starts with tline "ifndef " =
+          vname = trim ws (expand make vars (trim ws (str slice tline 7 (str len tline))) vars "" "")
+          c = (str len (lookup var vars vname)) == 0
+          (True, step make cond push stack c)
+        | str starts with tline "ifeq " =
+          arg = trim ws (str slice tline 5 (str len tline))
+          c = eval make gnu eq arg vars True
+          (True, step make cond push stack c)
+        | str starts with tline "ifneq " =
+          arg = trim ws (str slice tline 6 (str len tline))
+          c = eval make gnu eq arg vars False
+          (True, step make cond push stack c)
+        | otherwise = (False, stack)
+
 op :: parse makefile String with [MakeVar] => [MakeRule] [MakeVar] [String]
       parse makefile raw    with cli_vars  =
         lines = expand make includes (join make continuations (split lines raw) "" []) []
-        parse makefile lines lines cli_vars cli_vars "" [] [] [] []
+        parse makefile lines lines cli_vars cli_vars "" [] [] [] [] []
 
 fn :: flush current rule String [String] [String] [MakeRule] => [MakeRule]
       flush current rule "" cur_deps cur_recs rules = rules
       flush current rule cur_t cur_deps cur_recs rules = merge rule into list rules (MRule cur_t cur_deps cur_recs)
 
-fn :: parse makefile lines [String] [MakeVar] [MakeVar] String [String] [String] [MakeRule] [String] => [MakeRule] [MakeVar] [String]
-      parse makefile lines [] vars cli_vars cur_t cur_deps cur_recs rules phonies =
+fn :: parse makefile lines [String] [MakeVar] [MakeVar] String [String] [String] [MakeRule] [String] [(Bool, Bool, Bool)] => [MakeRule] [MakeVar] [String]
+      parse makefile lines [] vars cli_vars cur_t cur_deps cur_recs rules phonies _ =
         (flush current rule cur_t cur_deps cur_recs rules, vars, phonies)
-      parse makefile lines (line:rest) vars cli_vars cur_t cur_deps cur_recs rules phonies =
-        | ((str len line) > 0) and ((str char at line 0) == 9) and ((str len cur_t) > 0) = parse makefile lines rest vars cli_vars cur_t cur_deps (cur_recs :: [str slice line 1 (str len line)]) rules phonies
-        | (str len (trim ws line)) == 0 = parse makefile lines rest vars cli_vars cur_t cur_deps cur_recs rules phonies
-        | str starts with (trim ws line) "#" = parse makefile lines rest vars cli_vars cur_t cur_deps cur_recs rules phonies
-        | otherwise = parse makefile stmt line rest vars cli_vars (flush current rule cur_t cur_deps cur_recs rules) phonies
+      parse makefile lines (line:rest) vars cli_vars cur_t cur_deps cur_recs rules phonies cond_stack =
+        tline = trim ws line
+        cond_res = check make cond directive tline vars cond_stack
+        parse makefile after cond (fst cond_res) (snd cond_res) line tline rest vars cli_vars cur_t cur_deps cur_recs rules phonies
 
-fn :: parse makefile stmt String [String] [MakeVar] [MakeVar] [MakeRule] [String] => [MakeRule] [MakeVar] [String]
-      parse makefile stmt line rest vars cli_vars rules phonies =
+fn :: parse makefile after cond Bool [(Bool, Bool, Bool)] String String [String] [MakeVar] [MakeVar] String [String] [String] [MakeRule] [String] => [MakeRule] [MakeVar] [String]
+      parse makefile after cond True next_stack _ _ rest vars cli_vars cur_t cur_deps cur_recs rules phonies =
+        parse makefile lines rest vars cli_vars cur_t cur_deps cur_recs rules phonies next_stack
+      parse makefile after cond False next_stack line tline rest vars cli_vars cur_t cur_deps cur_recs rules phonies =
+        | not (is make cond active next_stack) = parse makefile lines rest vars cli_vars cur_t cur_deps cur_recs rules phonies next_stack
+        | ((str len line) > 0) and ((str char at line 0) == 9) and ((str len cur_t) > 0) = parse makefile lines rest vars cli_vars cur_t cur_deps (cur_recs :: [str slice line 1 (str len line)]) rules phonies next_stack
+        | (str len tline) == 0 = parse makefile lines rest vars cli_vars cur_t cur_deps cur_recs rules phonies next_stack
+        | str starts with tline "#" = parse makefile lines rest vars cli_vars cur_t cur_deps cur_recs rules phonies next_stack
+        | otherwise = parse makefile stmt line rest vars cli_vars (flush current rule cur_t cur_deps cur_recs rules) phonies next_stack
+
+fn :: parse makefile stmt String [String] [MakeVar] [MakeVar] [MakeRule] [String] [(Bool, Bool, Bool)] => [MakeRule] [MakeVar] [String]
+      parse makefile stmt line rest vars cli_vars rules phonies cond_stack =
         eq_idx = find char idx line 0 (str len line) 61
         col_idx = find char idx line 0 (str len line) 58
-        dispatch makefile stmt line rest vars cli_vars rules phonies eq_idx col_idx
+        dispatch makefile stmt line rest vars cli_vars rules phonies eq_idx col_idx cond_stack
 
-fn :: dispatch makefile stmt String [String] [MakeVar] [MakeVar] [MakeRule] [String] Int Int => [MakeRule] [MakeVar] [String]
-      dispatch makefile stmt line rest vars cli_vars rules phonies eq_idx col_idx =
-        | (eq_idx > 0) and ((col_idx < 0) or (eq_idx < col_idx) or ((col_idx + 1) == eq_idx)) = parse makefile assign line eq_idx rest vars cli_vars rules phonies
-        | col_idx > 0 = parse makefile rule line col_idx rest vars cli_vars rules phonies
-        | otherwise   = parse makefile lines rest vars cli_vars "" [] [] rules phonies
+fn :: dispatch makefile stmt String [String] [MakeVar] [MakeVar] [MakeRule] [String] Int Int [(Bool, Bool, Bool)] => [MakeRule] [MakeVar] [String]
+      dispatch makefile stmt line rest vars cli_vars rules phonies eq_idx col_idx cond_stack =
+        | (eq_idx > 0) and ((col_idx < 0) or (eq_idx < col_idx) or ((col_idx + 1) == eq_idx)) = parse makefile assign line eq_idx rest vars cli_vars rules phonies cond_stack
+        | col_idx > 0 = parse makefile rule line col_idx rest vars cli_vars rules phonies cond_stack
+        | otherwise   = parse makefile lines rest vars cli_vars "" [] [] rules phonies cond_stack
 
-fn :: parse makefile assign String Int [String] [MakeVar] [MakeVar] [MakeRule] [String] => [MakeRule] [MakeVar] [String]
-      parse makefile assign line eq_idx rest vars cli_vars rules phonies =
+fn :: parse makefile assign String Int [String] [MakeVar] [MakeVar] [MakeRule] [String] [(Bool, Bool, Bool)] => [MakeRule] [MakeVar] [String]
+      parse makefile assign line eq_idx rest vars cli_vars rules phonies cond_stack =
         prev_ch = str char at line (eq_idx - 1)
         is_cond = prev_ch == 63
         is_imm = prev_ch == 58
         is_app = prev_ch == 43
-        key_end = select assign key end eq_idx (is_cond or is_imm or is_app)
+        is_sh = prev_ch == 33
+        key_end = select assign key end eq_idx (is_cond or is_imm or is_app or is_sh)
         key = trim ws (str slice line 0 key_end)
         raw_val = trim ws (str slice line (eq_idx + 1) (str len line))
-        stored_val = compute make assign val vars key raw_val is_imm is_app
+        stored_val = compute make assign val vars key raw_val is_imm is_app is_sh
         next_vars = update make var vars cli_vars key stored_val is_cond
-        parse makefile lines rest next_vars cli_vars "" [] [] rules phonies
+        parse makefile lines rest next_vars cli_vars "" [] [] rules phonies cond_stack
 
-fn :: compute make assign val [MakeVar] String String Bool Bool => String
-      compute make assign val vars key raw_val is_imm is_app =
+fn :: compute make assign val [MakeVar] String String Bool Bool Bool => String
+      compute make assign val vars key raw_val is_imm is_app is_sh =
+        | is_sh =
+          exp_cmd = expand make vars raw_val vars "" ""
+          res = run shell script exp_cmd with []
+          normalize make shell out (fst res)
         | is_app =
           prev = lookup var vars key
           append make var val prev raw_val
@@ -520,26 +803,27 @@ fn :: select assign key end Int Bool => Int
 
 fn :: update make var [MakeVar] [MakeVar] String String Bool => [MakeVar]
       update make var vars cli_vars key val is_cond =
-        | has var cli_vars key            = vars
-        | is_cond and (has var vars key) = vars
-        | otherwise                       = set var vars key val []
+        | has var cli_vars key = vars
+        | (has var cli_vars "__MAKE_ENV_OVERRIDE__") and ((str len (sys getenv key)) > 0) = set var vars key (sys getenv key) []
+        | is_cond and ((has var vars key) or ((str len (sys getenv key)) > 0)) = vars
+        | otherwise = set var vars key val []
 
-fn :: parse makefile rule String Int [String] [MakeVar] [MakeVar] [MakeRule] [String] => [MakeRule] [MakeVar] [String]
-      parse makefile rule line col_idx rest vars cli_vars rules phonies =
+fn :: parse makefile rule String Int [String] [MakeVar] [MakeVar] [MakeRule] [String] [(Bool, Bool, Bool)] => [MakeRule] [MakeVar] [String]
+      parse makefile rule line col_idx rest vars cli_vars rules phonies cond_stack =
         raw_t = trim ws (str slice line 0 col_idx)
         exp_t = expand make vars raw_t vars "" ""
         raw_deps = trim ws (str slice line (col_idx + 1) (str len line))
         exp_deps = split whitespace (expand make vars raw_deps vars exp_t "")
-        record makefile rule exp_t exp_deps rest vars cli_vars rules phonies
+        record makefile rule exp_t exp_deps rest vars cli_vars rules phonies cond_stack
 
-fn :: record makefile rule String [String] [String] [MakeVar] [MakeVar] [MakeRule] [String] => [MakeRule] [MakeVar] [String]
-      record makefile rule ".PHONY" deps rest vars cli_vars rules phonies =
-        parse makefile lines rest vars cli_vars "" [] [] rules (phonies :: deps)
-      record makefile rule ".SUFFIXES" _ rest vars cli_vars rules phonies =
-        parse makefile lines rest vars cli_vars "" [] [] rules phonies
-      record makefile rule target deps rest vars cli_vars rules phonies =
+fn :: record makefile rule String [String] [String] [MakeVar] [MakeVar] [MakeRule] [String] [(Bool, Bool, Bool)] => [MakeRule] [MakeVar] [String]
+      record makefile rule ".PHONY" deps rest vars cli_vars rules phonies cond_stack =
+        parse makefile lines rest vars cli_vars "" [] [] rules (phonies :: deps) cond_stack
+      record makefile rule ".SUFFIXES" _ rest vars cli_vars rules phonies cond_stack =
+        parse makefile lines rest vars cli_vars "" [] [] rules phonies cond_stack
+      record makefile rule target deps rest vars cli_vars rules phonies cond_stack =
         norm_pair = normalize suffix rule target deps
-        parse makefile lines rest vars cli_vars (fst norm_pair) (snd norm_pair) [] rules phonies
+        parse makefile lines rest vars cli_vars (fst norm_pair) (snd norm_pair) [] rules phonies cond_stack
 
 fn :: normalize suffix rule String [String] => String [String]
       normalize suffix rule target deps     =
@@ -751,9 +1035,14 @@ fn :: check recipe rc Int Bool String [String] [String] [MakeVar] MakeSpec [Stri
         | mk_ignore_err spec = execute make recipes target rest deps vars spec built next_log
         | otherwise          = (False, built, next_log :: ["make: *** [" + target + "] Error " + (int to str rc)])
 
+fn :: build eff make cli vars [MakeVar] Bool => [MakeVar]
+      build eff make cli vars cli_vars False = cli_vars
+      build eff make cli vars cli_vars True = cli_vars :: [MVar "__MAKE_ENV_OVERRIDE__" "1"]
+
 op :: evaluate make String       with MakeSpec => Bool [String]
       evaluate make raw_makefile with spec     =
-        parsed = parse makefile raw_makefile with (mk_cli_vars spec)
+        eff_cli = build eff make cli vars (mk_cli_vars spec) (mk_env_override spec)
+        parsed = parse makefile raw_makefile with eff_cli
         rules = fst3 parsed
         vars = snd3 parsed
         phonies = trd3 parsed
@@ -936,11 +1225,19 @@ fn :: lex sh loop String Int Int String Bool [String] => [String]
       lex sh loop s (idx + 1) len "" False (push sh tok cur quoted acc)
         | ((idx + 3) < len) and ((str slice s idx (idx + 4)) == "2>&1") =
       lex sh loop s (idx + 4) len "" False ((push sh tok cur quoted acc) :: ["2>&1"])
+        | ((idx + 3) < len) and ((str slice s idx (idx + 4)) == "1>&2") =
+      lex sh loop s (idx + 4) len "" False ((push sh tok cur quoted acc) :: [">&2"])
+        | ((idx + 2) < len) and ((str slice s idx (idx + 3)) == ">&2") =
+      lex sh loop s (idx + 3) len "" False ((push sh tok cur quoted acc) :: [">&2"])
+        | ((idx + 2) < len) and (((str slice s idx (idx + 3)) == "2>>") and (((str len cur) == 0) and (not quoted))) =
+      lex sh loop s (idx + 3) len "" False (acc :: ["2>>"])
+        | ((idx + 1) < len) and (((str slice s idx (idx + 2)) == "2>") and (((str len cur) == 0) and (not quoted))) =
+      lex sh loop s (idx + 2) len "" False (acc :: ["2>"])
         | ((idx + 1) < len) and ((str slice s idx (idx + 2)) == "<<") =
           lex heredoc s (idx + 2) len (push sh tok cur quoted acc)
         | ((idx + 1) < len) and (((str slice s idx (idx + 2)) == "&&") or (((str slice s idx (idx + 2)) == "||") or (((str slice s idx (idx + 2)) == ">>") or ((str slice s idx (idx + 2)) == ";;")))) =
       lex sh loop s (idx + 2) len "" False ((push sh tok cur quoted acc) :: [str slice s idx (idx + 2)])
-        | ((str char at s idx) == 59) or (((str char at s idx) == 124) or (((str char at s idx) == 40) or (((str char at s idx) == 41) or (((str char at s idx) == 60) or ((str char at s idx) == 62))))) =
+        | ((str char at s idx) == 59) or (((str char at s idx) == 38) or (((str char at s idx) == 124) or (((str char at s idx) == 40) or (((str char at s idx) == 41) or (((str char at s idx) == 60) or ((str char at s idx) == 62)))))) =
       lex sh loop s (idx + 1) len "" False ((push sh tok cur quoted acc) :: [str slice s idx (idx + 1)])
         | otherwise =
           lex sh loop s (idx + 1) len (cur + (str slice s idx (idx + 1))) quoted acc
@@ -1026,19 +1323,23 @@ fn :: parse sh list [String] [String] => ShNode [String]
         cleaned = skip semis toks
         parse sh list nonempty cleaned stops
 
+fn :: wrap bg if amp (ShNode, [String]) => ShNode [String]
+      wrap bg if amp (node, ("&":rest)) =  (ShBg node, rest)
+      wrap bg if amp (node, rem)        =  (node, rem)
+
 fn :: parse sh list nonempty [String] [String] => ShNode [String]
       parse sh list nonempty [] stops = (ShSimple [] [], [])
       parse sh list nonempty (t:rest) stops =
         | is stop word t stops = (ShSimple [] [], [t] :: rest)
         | otherwise =
-          first = parse sh andor ([t] :: rest)
+          first = wrap bg if amp (parse sh andor ([t] :: rest))
           parse sh list tail (fst first) (skip semis (snd first)) stops
 
 fn :: parse sh list tail ShNode [String] [String] => ShNode [String]
       parse sh list tail left [] _ = (left, [])
       parse sh list tail left (t:rest) stops =
         | is stop word t stops = (left, [t] :: rest)
-        | otherwise            = combine sh seq left (parse sh andor ([t] :: rest)) stops
+        | otherwise            = combine sh seq left (wrap bg if amp (parse sh andor ([t] :: rest))) stops
 
 fn :: combine sh seq ShNode (ShNode, [String]) [String] => ShNode [String]
       combine sh seq left (right, rem) stops =
@@ -1210,7 +1511,7 @@ fn :: collect case pats [String]   [String] => [String] [String]
 
 fn :: is cmd delim String => Bool
       is cmd delim t      =
-        (t == ";") or ((t == ";;") or ((t == "&&") or ((t == "||") or ((t == "|") or ((t == ")") or ((t == "\}") or ((t == "then") or ((t == "elif") or ((t == "else") or ((t == "fi") or ((t == "do") or ((t == "done") or (t == "esac")))))))))))))
+        (t == ";") or ((t == "&") or ((t == ";;") or ((t == "&&") or ((t == "||") or ((t == "|") or ((t == ")") or ((t == "\}") or ((t == "then") or ((t == "elif") or ((t == "else") or ((t == "fi") or ((t == "do") or ((t == "done") or (t == "esac"))))))))))))))
 
 fn :: is var assign tok String => Bool
       is var assign tok s      =
@@ -1226,7 +1527,10 @@ fn :: parse sh simple [String] [String] [Redir] => ShNode [String]
         | t == ">>"            = parse sh redir 3 rest words redirs
         | t == "<<HEREDOC_EXP" = parse sh redir 4 rest words redirs
         | t == "<<HEREDOC_LIT" = parse sh redir 5 rest words redirs
+        | t == "2>"            = parse sh redir 6 rest words redirs
+        | t == "2>>"           = parse sh redir 7 rest words redirs
         | t == "2>&1"          = parse sh simple rest words (redirs :: [RedirErrToOut])
+        | t == ">&2"           = parse sh simple rest words (redirs :: [RedirOutToErr])
         | otherwise            = parse sh simple rest (words :: [t]) redirs
 
 fn :: parse sh redir Int [String] [String] [Redir] => ShNode [String]
@@ -1236,7 +1540,9 @@ fn :: parse sh redir Int [String] [String] [Redir] => ShNode [String]
         | kind == 2 = parse sh simple rest words (redirs :: [RedirOut target])
         | kind == 3 = parse sh simple rest words (redirs :: [RedirAppend target])
         | kind == 4 = parse sh simple rest words (redirs :: [RedirHeredoc target True])
-        | otherwise = parse sh simple rest words (redirs :: [RedirHeredoc target False])
+        | kind == 5 = parse sh simple rest words (redirs :: [RedirHeredoc target False])
+        | kind == 6 = parse sh simple rest words (redirs :: [RedirErrOut target])
+        | otherwise = parse sh simple rest words (redirs :: [RedirErrAppend target])
 
 fn :: finalize simple node [String] [Redir] => ShNode
       finalize simple node (w:[])   []      =
@@ -1257,6 +1563,37 @@ fn :: sh glob match String String => Bool
       sh glob match pat    text   =
         sh glob loop pat 0 (str len pat) text 0 (str len text)
 
+fn :: match bracket body String Int Int Int => Bool
+      match bracket body s idx len ch =
+        | idx >= len = False
+        | ((idx + 2) < len) and ((str char at s (idx + 1)) == 45) =
+          | (ch >= (str char at s idx)) and (ch <= (str char at s (idx + 2))) = True
+          | otherwise = match bracket body s (idx + 3) len ch |.
+        | ch == (str char at s idx) = True
+        | otherwise                 = match bracket body s (idx + 1) len ch
+
+fn :: select bracket match Bool  Bool => Bool
+      select bracket match True  m    =  not m
+      select bracket match False m    =  m
+
+fn :: eval bracket class String Int => Bool
+      eval bracket class cls    ch  =
+        | (str len cls) == 0 = False
+        | ((str char at cls 0) == 33) or ((str char at cls 0) == 94) =
+          body = str slice cls 1 (str len cls)
+          select bracket match True (match bracket body body 0 (str len body) ch)
+        | otherwise =
+          match bracket body cls 0 (str len cls) ch
+
+fn :: sh glob bracket at String Int Int String Int Int Int => Bool
+      sh glob bracket at pat pi plen text ti tlen close_pi =
+        | close_pi < 0 =
+          | (str char at text ti) == 91 = sh glob loop pat pi plen text (ti + 1) tlen
+          | otherwise                   = False |.
+        | eval bracket class (str slice pat pi close_pi) (str char at text ti) =
+          sh glob loop pat (close_pi + 1) plen text (ti + 1) tlen
+        | otherwise = False
+
 fn :: sh glob loop String Int Int String Int Int => Bool
       sh glob loop pat pi plen text ti tlen =
         | (pi >= plen) and (ti >= tlen) = True
@@ -1265,6 +1602,8 @@ fn :: sh glob loop String Int Int String Int Int => Bool
         | (pi >= plen) or (ti >= tlen) = False
         | (str char at pat pi) == 63 =
       sh glob loop pat (pi + 1) plen text (ti + 1) tlen
+        | (str char at pat pi) == 91 =
+          sh glob bracket at pat (pi + 1) plen text ti tlen (find char idx pat (pi + 1) plen 93)
         | (str char at pat pi) == (str char at text ti) =
       sh glob loop pat (pi + 1) plen text (ti + 1) tlen
         | otherwise = False
@@ -1346,6 +1685,8 @@ fn :: lex arith String Int Int [String] => [String]
       lex arith s idx len acc =
         | idx >= len                = acc
         | is ws (str char at s idx) = lex arith s (idx + 1) len acc
+        | ((idx + 2) < len) and (((str slice s idx (idx + 3)) == "<<=") or ((str slice s idx (idx + 3)) == ">>=")) =
+      lex arith s (idx + 3) len (acc :: [str slice s idx (idx + 3)])
         | ((idx + 1) < len) and (is two char arith op (str slice s idx (idx + 2))) =
       lex arith s (idx + 2) len (acc :: [str slice s idx (idx + 2)])
         | is var char (str char at s idx) =
@@ -1355,168 +1696,211 @@ fn :: lex arith String Int Int [String] => [String]
 
 fn :: is two char arith op String => Bool
       is two char arith op op_s =
-        (op_s == "<<") or ((op_s == ">>") or ((op_s == "<=") or ((op_s == ">=") or ((op_s == "==") or ((op_s == "!=") or ((op_s == "&&") or (op_s == "||")))))))
+        (op_s == "<<") or ((op_s == ">>") or ((op_s == "<=") or ((op_s == ">=") or ((op_s == "==") or ((op_s == "!=") or ((op_s == "&&") or ((op_s == "||") or ((op_s == "++") or ((op_s == "--") or ((op_s == "+=") or ((op_s == "-=") or ((op_s == "*=") or ((op_s == "/=") or ((op_s == "%=") or ((op_s == "&=") or ((op_s == "^=") or (op_s == "|=")))))))))))))))))
+
+fn :: is arith assign op String => Bool
+      is arith assign op op_s   =
+        (op_s == "=") or ((op_s == "+=") or ((op_s == "-=") or ((op_s == "*=") or ((op_s == "/=") or ((op_s == "%=") or ((op_s == "<<=") or ((op_s == ">>=") or ((op_s == "&=") or ((op_s == "^=") or (op_s == "|="))))))))))
+
+fn :: is arith ident String => Bool
+      is arith ident s      =
+        | (str len s) == 0    = False
+        | is digits only s    = False
+        | otherwise           = is var char (str char at s 0)
+
+fn :: apply arith assign op String Int Int => Int
+      apply arith assign op "=" _ rv = rv
+      apply arith assign op "+=" lv rv = lv + rv
+      apply arith assign op "-=" lv rv = lv - rv
+      apply arith assign op "*=" lv rv = lv * rv
+      apply arith assign op "/=" lv rv = safe div lv rv
+      apply arith assign op "%=" lv rv = safe mod lv rv
+      apply arith assign op "<<=" lv rv = arith shift left lv rv
+      apply arith assign op ">>=" lv rv = arith shift right lv rv
+      apply arith assign op "&=" lv rv = bit band lv rv
+      apply arith assign op "^=" lv rv = bit bxor lv rv
+      apply arith assign op "|=" lv rv = bit bor lv rv
+      apply arith assign op _ _ rv = rv
 
 fn :: lex arith after ident String Int [String] (String, Int) => [String]
       lex arith after ident s len acc (id_s, next_idx) =
         lex arith s next_idx len (acc :: [id_s])
 
-fn :: eval sh arith String ShEnv => Int
-      eval sh arith expr   env   =
+fn :: eval sh arith state String ShEnv => Int ShEnv
+      eval sh arith state expr env =
         exp_pair = expand sh word expr env
         toks = lex arith (fst exp_pair) 0 (str len (fst exp_pair)) []
-        fst (parse arith ternary toks (snd exp_pair))
+        r = parse arith expr toks (snd exp_pair)
+        (fst3 r, trd3 r)
 
-fn :: parse arith ternary [String] ShEnv => Int [String]
+fn :: eval sh arith String ShEnv => Int
+      eval sh arith expr   env   =
+        fst (eval sh arith state expr env)
+
+fn :: parse arith expr [String]          ShEnv => Int [String] ShEnv
+      parse arith expr (vname:op_s:rest) env   =
+        | (is arith ident vname) and (is arith assign op op_s) =
+          rhs_r = parse arith expr rest env
+          rv = fst3 rhs_r
+          rem = snd3 rhs_r
+          env1 = trd3 rhs_r
+          cur_v = parse opt digits (lookup sh param vname env1)
+          nv = apply arith assign op op_s cur_v rv
+          env2 = assign sh var vname (int to str nv) env1
+          (nv, rem, env2)
+        | otherwise = parse arith ternary ([vname, op_s] :: rest) env
+      parse arith expr toks              env   =  parse arith ternary toks env
+
+fn :: parse arith ternary [String] ShEnv => Int [String] ShEnv
       parse arith ternary toks     env   =
         c_res = parse arith lor toks env
-        parse arith ternary tail (fst c_res) (snd c_res) env
+        parse arith ternary tail (fst3 c_res) (snd3 c_res) (trd3 c_res)
 
-fn :: parse arith ternary tail Int [String] ShEnv => Int [String]
+fn :: parse arith ternary tail Int [String] ShEnv => Int [String] ShEnv
       parse arith ternary tail cond_v ("?":rest) env =
-        t_res = parse arith ternary rest env
-        after_colon = consume expected ":" (snd t_res)
-        f_res = parse arith ternary after_colon env
-        (select arith ternary cond_v (fst t_res) (fst f_res), snd f_res)
-      parse arith ternary tail cond_v rem _ = (cond_v, rem)
+        t_res = parse arith expr rest env
+        after_colon = consume expected ":" (snd3 t_res)
+        f_res = parse arith expr after_colon (trd3 t_res)
+        (select arith ternary cond_v (fst3 t_res) (fst3 f_res), snd3 f_res, trd3 f_res)
+      parse arith ternary tail cond_v rem env = (cond_v, rem, env)
 
 fn :: select arith ternary Int Int Int => Int
       select arith ternary 0 _ fv = fv
       select arith ternary _ tv _ = tv
 
-fn :: parse arith lor [String] ShEnv => Int [String]
+fn :: parse arith lor [String] ShEnv => Int [String] ShEnv
       parse arith lor toks     env   =
         l_res = parse arith land toks env
-        parse arith lor tail (fst l_res) (snd l_res) env
+        parse arith lor tail (fst3 l_res) (snd3 l_res) (trd3 l_res)
 
-fn :: parse arith lor tail Int [String] ShEnv => Int [String]
+fn :: parse arith lor tail Int [String] ShEnv => Int [String] ShEnv
       parse arith lor tail lv ("||":rest) env =
         r_res = parse arith land rest env
-        parse arith lor tail (bool to int ((lv != 0) or ((fst r_res) != 0))) (snd r_res) env
-      parse arith lor tail lv rem _ = (lv, rem)
+        parse arith lor tail (bool to int ((lv != 0) or ((fst3 r_res) != 0))) (snd3 r_res) (trd3 r_res)
+      parse arith lor tail lv rem env = (lv, rem, env)
 
-fn :: parse arith land [String] ShEnv => Int [String]
+fn :: parse arith land [String] ShEnv => Int [String] ShEnv
       parse arith land toks     env   =
         l_res = parse arith bor toks env
-        parse arith land tail (fst l_res) (snd l_res) env
+        parse arith land tail (fst3 l_res) (snd3 l_res) (trd3 l_res)
 
-fn :: parse arith land tail Int [String] ShEnv => Int [String]
+fn :: parse arith land tail Int [String] ShEnv => Int [String] ShEnv
       parse arith land tail lv ("&&":rest) env =
         r_res = parse arith bor rest env
-        parse arith land tail (bool to int ((lv != 0) and ((fst r_res) != 0))) (snd r_res) env
-      parse arith land tail lv rem _ = (lv, rem)
+        parse arith land tail (bool to int ((lv != 0) and ((fst3 r_res) != 0))) (snd3 r_res) (trd3 r_res)
+      parse arith land tail lv rem env = (lv, rem, env)
 
-fn :: parse arith bor [String] ShEnv => Int [String]
+fn :: parse arith bor [String] ShEnv => Int [String] ShEnv
       parse arith bor toks     env   =
         l_res = parse arith bxor toks env
-        parse arith bor tail (fst l_res) (snd l_res) env
+        parse arith bor tail (fst3 l_res) (snd3 l_res) (trd3 l_res)
 
-fn :: parse arith bor tail Int [String] ShEnv => Int [String]
+fn :: parse arith bor tail Int [String] ShEnv => Int [String] ShEnv
       parse arith bor tail lv ("|":rest) env =
         r_res = parse arith bxor rest env
-        parse arith bor tail (bit bor lv (fst r_res)) (snd r_res) env
-      parse arith bor tail lv rem _ = (lv, rem)
+        parse arith bor tail (bit bor lv (fst3 r_res)) (snd3 r_res) (trd3 r_res)
+      parse arith bor tail lv rem env = (lv, rem, env)
 
-fn :: parse arith bxor [String] ShEnv => Int [String]
+fn :: parse arith bxor [String] ShEnv => Int [String] ShEnv
       parse arith bxor toks     env   =
         l_res = parse arith band toks env
-        parse arith bxor tail (fst l_res) (snd l_res) env
+        parse arith bxor tail (fst3 l_res) (snd3 l_res) (trd3 l_res)
 
-fn :: parse arith bxor tail Int [String] ShEnv => Int [String]
+fn :: parse arith bxor tail Int [String] ShEnv => Int [String] ShEnv
       parse arith bxor tail lv ("^":rest) env =
         r_res = parse arith band rest env
-        parse arith bxor tail (bit bxor lv (fst r_res)) (snd r_res) env
-      parse arith bxor tail lv rem _ = (lv, rem)
+        parse arith bxor tail (bit bxor lv (fst3 r_res)) (snd3 r_res) (trd3 r_res)
+      parse arith bxor tail lv rem env = (lv, rem, env)
 
-fn :: parse arith band [String] ShEnv => Int [String]
+fn :: parse arith band [String] ShEnv => Int [String] ShEnv
       parse arith band toks     env   =
         l_res = parse arith eq toks env
-        parse arith band tail (fst l_res) (snd l_res) env
+        parse arith band tail (fst3 l_res) (snd3 l_res) (trd3 l_res)
 
-fn :: parse arith band tail Int [String] ShEnv => Int [String]
+fn :: parse arith band tail Int [String] ShEnv => Int [String] ShEnv
       parse arith band tail lv ("&":rest) env =
         r_res = parse arith eq rest env
-        parse arith band tail (bit band lv (fst r_res)) (snd r_res) env
-      parse arith band tail lv rem _ = (lv, rem)
+        parse arith band tail (bit band lv (fst3 r_res)) (snd3 r_res) (trd3 r_res)
+      parse arith band tail lv rem env = (lv, rem, env)
 
-fn :: parse arith eq [String] ShEnv => Int [String]
+fn :: parse arith eq [String] ShEnv => Int [String] ShEnv
       parse arith eq toks     env   =
         l_res = parse arith rel toks env
-        parse arith eq tail (fst l_res) (snd l_res) env
+        parse arith eq tail (fst3 l_res) (snd3 l_res) (trd3 l_res)
 
-fn :: parse arith eq tail Int [String] ShEnv => Int [String]
+fn :: parse arith eq tail Int [String] ShEnv => Int [String] ShEnv
       parse arith eq tail lv ("==":rest) env =
         r_res = parse arith rel rest env
-        parse arith eq tail (bool to int (lv == (fst r_res))) (snd r_res) env
+        parse arith eq tail (bool to int (lv == (fst3 r_res))) (snd3 r_res) (trd3 r_res)
       parse arith eq tail lv ("!=":rest) env =
         r_res = parse arith rel rest env
-        parse arith eq tail (bool to int (lv != (fst r_res))) (snd r_res) env
-      parse arith eq tail lv rem _ = (lv, rem)
+        parse arith eq tail (bool to int (lv != (fst3 r_res))) (snd3 r_res) (trd3 r_res)
+      parse arith eq tail lv rem env = (lv, rem, env)
 
-fn :: parse arith rel [String] ShEnv => Int [String]
+fn :: parse arith rel [String] ShEnv => Int [String] ShEnv
       parse arith rel toks     env   =
         l_res = parse arith shift toks env
-        parse arith rel tail (fst l_res) (snd l_res) env
+        parse arith rel tail (fst3 l_res) (snd3 l_res) (trd3 l_res)
 
-fn :: parse arith rel tail Int [String] ShEnv => Int [String]
+fn :: parse arith rel tail Int [String] ShEnv => Int [String] ShEnv
       parse arith rel tail lv ("<":rest) env =
         r_res = parse arith shift rest env
-        parse arith rel tail (bool to int (lv < (fst r_res))) (snd r_res) env
+        parse arith rel tail (bool to int (lv < (fst3 r_res))) (snd3 r_res) (trd3 r_res)
       parse arith rel tail lv ("<=":rest) env =
         r_res = parse arith shift rest env
-        parse arith rel tail (bool to int (lv <= (fst r_res))) (snd r_res) env
+        parse arith rel tail (bool to int (lv <= (fst3 r_res))) (snd3 r_res) (trd3 r_res)
       parse arith rel tail lv (">":rest) env =
         r_res = parse arith shift rest env
-        parse arith rel tail (bool to int (lv > (fst r_res))) (snd r_res) env
+        parse arith rel tail (bool to int (lv > (fst3 r_res))) (snd3 r_res) (trd3 r_res)
       parse arith rel tail lv (">=":rest) env =
         r_res = parse arith shift rest env
-        parse arith rel tail (bool to int (lv >= (fst r_res))) (snd r_res) env
-      parse arith rel tail lv rem _ = (lv, rem)
+        parse arith rel tail (bool to int (lv >= (fst3 r_res))) (snd3 r_res) (trd3 r_res)
+      parse arith rel tail lv rem env = (lv, rem, env)
 
-fn :: parse arith shift [String] ShEnv => Int [String]
+fn :: parse arith shift [String] ShEnv => Int [String] ShEnv
       parse arith shift toks     env   =
         l_res = parse arith add toks env
-        parse arith shift tail (fst l_res) (snd l_res) env
+        parse arith shift tail (fst3 l_res) (snd3 l_res) (trd3 l_res)
 
-fn :: parse arith shift tail Int [String] ShEnv => Int [String]
+fn :: parse arith shift tail Int [String] ShEnv => Int [String] ShEnv
       parse arith shift tail lv ("<<":rest) env =
         r_res = parse arith add rest env
-        parse arith shift tail (arith shift left lv (fst r_res)) (snd r_res) env
+        parse arith shift tail (arith shift left lv (fst3 r_res)) (snd3 r_res) (trd3 r_res)
       parse arith shift tail lv (">>":rest) env =
         r_res = parse arith add rest env
-        parse arith shift tail (arith shift right lv (fst r_res)) (snd r_res) env
-      parse arith shift tail lv rem _ = (lv, rem)
+        parse arith shift tail (arith shift right lv (fst3 r_res)) (snd3 r_res) (trd3 r_res)
+      parse arith shift tail lv rem env = (lv, rem, env)
 
-fn :: parse arith add [String] ShEnv => Int [String]
+fn :: parse arith add [String] ShEnv => Int [String] ShEnv
       parse arith add toks     env   =
         l_res = parse arith mul toks env
-        parse arith add tail (fst l_res) (snd l_res) env
+        parse arith add tail (fst3 l_res) (snd3 l_res) (trd3 l_res)
 
-fn :: parse arith add tail Int [String] ShEnv => Int [String]
+fn :: parse arith add tail Int [String] ShEnv => Int [String] ShEnv
       parse arith add tail lv ("+":rest) env =
         r_res = parse arith mul rest env
-        parse arith add tail (lv + (fst r_res)) (snd r_res) env
+        parse arith add tail (lv + (fst3 r_res)) (snd3 r_res) (trd3 r_res)
       parse arith add tail lv ("-":rest) env =
         r_res = parse arith mul rest env
-        parse arith add tail (lv - (fst r_res)) (snd r_res) env
-      parse arith add tail lv rem _ = (lv, rem)
+        parse arith add tail (lv - (fst3 r_res)) (snd3 r_res) (trd3 r_res)
+      parse arith add tail lv rem env = (lv, rem, env)
 
-fn :: parse arith mul [String] ShEnv => Int [String]
+fn :: parse arith mul [String] ShEnv => Int [String] ShEnv
       parse arith mul toks     env   =
         l_res = parse arith unary toks env
-        parse arith mul tail (fst l_res) (snd l_res) env
+        parse arith mul tail (fst3 l_res) (snd3 l_res) (trd3 l_res)
 
-fn :: parse arith mul tail Int [String] ShEnv => Int [String]
+fn :: parse arith mul tail Int [String] ShEnv => Int [String] ShEnv
       parse arith mul tail lv ("*":rest) env =
         r_res = parse arith unary rest env
-        parse arith mul tail (lv * (fst r_res)) (snd r_res) env
+        parse arith mul tail (lv * (fst3 r_res)) (snd3 r_res) (trd3 r_res)
       parse arith mul tail lv ("/":rest) env =
         r_res = parse arith unary rest env
-        parse arith mul tail (safe div lv (fst r_res)) (snd r_res) env
+        parse arith mul tail (safe div lv (fst3 r_res)) (snd3 r_res) (trd3 r_res)
       parse arith mul tail lv ("%":rest) env =
         r_res = parse arith unary rest env
-        parse arith mul tail (safe mod lv (fst r_res)) (snd r_res) env
-      parse arith mul tail lv rem _ = (lv, rem)
+        parse arith mul tail (safe mod lv (fst3 r_res)) (snd3 r_res) (trd3 r_res)
+      parse arith mul tail lv rem env = (lv, rem, env)
 
 fn :: safe div Int Int => Int
       safe div _   0   =  0
@@ -1526,26 +1910,49 @@ fn :: safe mod Int Int => Int
       safe mod _   0   =  0
       safe mod a   b   =  a % b
 
-fn :: parse arith unary [String]   ShEnv => Int [String]
-      parse arith unary ("-":rest) env   =
+fn :: parse arith unary [String]          ShEnv => Int [String] ShEnv
+      parse arith unary ("-":rest)        env   =
         r_res = parse arith unary rest env
-        (0 - (fst r_res), snd r_res)
-      parse arith unary ("+":rest) env   =
+        (0 - (fst3 r_res), snd3 r_res, trd3 r_res)
+      parse arith unary ("+":rest)        env   =
         parse arith unary rest env
-      parse arith unary ("!":rest) env   =
+      parse arith unary ("!":rest)        env   =
         r_res = parse arith unary rest env
-        (bool to int ((fst r_res) == 0), snd r_res)
-      parse arith unary toks       env   =
+        (bool to int ((fst3 r_res) == 0), snd3 r_res, trd3 r_res)
+      parse arith unary ("~":rest)        env   =
+        r_res = parse arith unary rest env
+        ((0 - 1) - (fst3 r_res), snd3 r_res, trd3 r_res)
+      parse arith unary ("++":vname:rest) env   =
+        cur_v = parse opt digits (lookup sh param vname env)
+        nv = cur_v + 1
+        env1 = assign sh var vname (int to str nv) env
+        (nv, rest, env1)
+      parse arith unary ("--":vname:rest) env   =
+        cur_v = parse opt digits (lookup sh param vname env)
+        nv = cur_v - 1
+        env1 = assign sh var vname (int to str nv) env
+        (nv, rest, env1)
+      parse arith unary toks              env   =
         parse arith primary toks env
 
-fn :: parse arith primary [String]   ShEnv => Int [String]
-      parse arith primary []         _     =  (0, [])
-      parse arith primary ("(":rest) env   =
-        inner = parse arith ternary rest env
-        (fst inner, consume expected ")" (snd inner))
-      parse arith primary (tok:rest) env   =
-        | is digits only tok = (str to int tok, rest)
-        | otherwise          = (parse opt digits (lookup sh param tok env), rest)
+fn :: parse arith primary [String]        ShEnv => Int [String] ShEnv
+      parse arith primary []              env   =  (0, [], env)
+      parse arith primary ("(":rest)      env   =
+        inner = parse arith expr rest env
+        (fst3 inner, consume expected ")" (snd3 inner), trd3 inner)
+      parse arith primary (tok:"++":rest) env   =
+        cur_v = parse opt digits (lookup sh param tok env)
+        nv = cur_v + 1
+        env1 = assign sh var tok (int to str nv) env
+        (cur_v, rest, env1)
+      parse arith primary (tok:"--":rest) env   =
+        cur_v = parse opt digits (lookup sh param tok env)
+        nv = cur_v - 1
+        env1 = assign sh var tok (int to str nv) env
+        (cur_v, rest, env1)
+      parse arith primary (tok:rest)      env   =
+        | is digits only tok = (str to int tok, rest, env)
+        | otherwise          = (parse opt digits (lookup sh param tok env), rest, env)
 
 -- ----------------------------------------------------------------------------
 -- 3.4 Parameter Expansion, Command Substitution & Pathname Globbing
@@ -1553,7 +1960,7 @@ fn :: parse arith primary [String]   ShEnv => Int [String]
 
 fn :: is sh param set String ShEnv => Bool
       is sh param set vname env =
-        | (vname == "?") or ((vname == "#") or ((vname == "@") or ((vname == "*") or (vname == "$")))) = True
+        | (vname == "?") or ((vname == "#") or ((vname == "@") or ((vname == "*") or ((vname == "$") or (vname == "!"))))) = True
         | (is digits only vname) and ((str to int vname) >= 1) = (str to int vname) <= (list len (env_pos env))
         | otherwise = has var (env_vars env) vname
 
@@ -1563,8 +1970,13 @@ fn :: lookup sh param String ShEnv => String
         | vname == "#" = int to str (list len (env_pos env))
         | (vname == "@") or (vname == "*") = join with (env_pos env) " "
         | vname == "$" = int to str (sys getpid)
+        | vname == "!" = int to str (env_bg_pid env)
         | (is digits only vname) and ((str to int vname) >= 1) = str list nth (env_pos env) ((str to int vname) - 1)
         | otherwise = lookup var (env_vars env) vname
+
+fn :: update optchar on optind String [MakeVar] => [MakeVar]
+      update optchar on optind "OPTIND" vars = set var vars "__SH_OPTCHAR__" "1" []
+      update optchar on optind _ vars = vars
 
 fn :: assign sh var String String ShEnv => ShEnv
       assign sh var k v env =
@@ -1572,7 +1984,8 @@ fn :: assign sh var String String ShEnv => ShEnv
           env with env_status = 1, env_exited = True
         | otherwise =
           _ = sys setenv k v
-          env with env_vars = set var (env_vars env) k v []
+          vars1 = set var (env_vars env) k v []
+          env with env_vars = update optchar on optind k vars1
 
 fn :: strip trailing newlines String => String
       strip trailing newlines s      =
@@ -1587,6 +2000,20 @@ fn :: eval cmd subst String  ShEnv => String ShEnv
         out_str = strip trailing newlines (env_out sub_env)
         (out_str, env with env_status = env_status sub_env)
 
+fn :: is tilde boundary before String Int => Bool
+      is tilde boundary before s idx =
+        | idx == 0 = True
+        | otherwise =
+          prev = str char at s (idx - 1)
+          (prev == 58) or ((prev == 61) or (prev == 3))
+
+fn :: is tilde boundary after String Int Int => Bool
+      is tilde boundary after s idx len =
+        | (idx + 1) >= len = True
+        | otherwise =
+          nxt = str char at s (idx + 1)
+          (nxt == 47) or ((nxt == 58) or (nxt == 4))
+
 fn :: expand sh word String ShEnv => String ShEnv
 expand sh word w      env   =  expand sh word loop w 0 (str len w) False env ""
 
@@ -1597,6 +2024,8 @@ expand sh word loop s idx len in_sq env acc =
         | (str char at s idx) == 2         = expand sh word loop s (idx + 1) len False env acc
         | ((str char at s idx) == 3) or ((str char at s idx) == 4) =
 expand sh word loop s (idx + 1) len in_sq env acc
+| (not in_sq) and (((str char at s idx) == 126) and ((is tilde boundary before s idx) and (is tilde boundary after s idx len))) =
+expand sh word loop s (idx + 1) len in_sq env (acc + (lookup sh param "HOME" env))
 | (not in_sq) and ((str char at s idx) == 96) =
 expand sh backtick s (idx + 1) len env acc
 | (not in_sq) and (((str char at s idx) == 36) and ((idx + 1) < len)) =
@@ -1633,6 +2062,8 @@ expand sh word loop s (idx + 2) len False env (acc + (int to str (list len (env_
 expand sh word loop s (idx + 2) len False env (acc + (join with (env_pos env) " "))
 | (str char at s (idx + 1)) == 36 =
 expand sh word loop s (idx + 2) len False env (acc + (int to str (sys getpid)))
+| (str char at s (idx + 1)) == 33 =
+expand sh word loop s (idx + 2) len False env (acc + (int to str (env_bg_pid env)))
 | ((str char at s (idx + 1)) >= 49) and ((str char at s (idx + 1)) <= 57) =
 expand sh pos digit s (idx + 2) len ((str char at s (idx + 1)) - 48) env acc
 | otherwise =
@@ -1643,8 +2074,8 @@ expand sh arith dollar s idx len env acc =
   ar_pair = read balanced arith s idx len 1 ""
   raw_ar = fst ar_pair
   inner_ar = str slice raw_ar 0 (max zero ((str len raw_ar) - 2))
-  val_i = eval sh arith inner_ar env
-expand sh word loop s (snd ar_pair) len False env (acc + (int to str val_i))
+  ar_res = eval sh arith state inner_ar env
+expand sh word loop s (snd ar_pair) len False (snd ar_res) (acc + (int to str (fst ar_res)))
 
 fn :: expand sh subst dollar String Int Int ShEnv String => String ShEnv
 expand sh subst dollar s idx len env acc =
@@ -1767,7 +2198,7 @@ fn :: is raw token quoted String Int Int => Bool
 fn :: has glob meta String Int Int => Bool
       has glob meta s idx len =
         | idx >= len = False
-        | ((str char at s idx) == 42) or ((str char at s idx) == 63) = True
+        | ((str char at s idx) == 42) or (((str char at s idx) == 63) or ((str char at s idx) == 91)) = True
         | otherwise  = has glob meta s (idx + 1) len
 
 fn :: str lex le String String Int Int Int => Bool
@@ -1799,15 +2230,50 @@ fn :: filter glob entries [String] String [String] => [String]
         | otherwise =
           filter glob entries rest pat acc
 
+fn :: glob expand dir split String Int => [String]
+      glob expand dir split exp_w slash_i =
+        | slash_i < 0 =
+          select glob matches exp_w (filter glob entries (list dir (sys getcwd)) exp_w [])
+        | otherwise =
+          dir_p = select wildcard dir (str slice exp_w 0 slash_i)
+          base_p = str slice exp_w (slash_i + 1) (str len exp_w)
+          pref = (str slice exp_w 0 slash_i) + "/"
+          matches = prepend dir prefix (filter glob entries (list dir dir_p) base_p []) pref []
+          select glob matches exp_w matches
+
 fn :: glob expand single String String ShEnv => [String]
       glob expand single raw_w exp_w env =
         | (not (env_noglob env)) and ((not (is raw token quoted raw_w 0 (str len raw_w))) and (has glob meta exp_w 0 (str len exp_w))) =
-          select glob matches exp_w (filter glob entries (list dir (sys getcwd)) exp_w [])
+      glob expand dir split exp_w (find last char idx exp_w ((str len exp_w) - 1) 47)
         | otherwise = [exp_w]
 
 fn :: select glob matches String [String] => [String]
       select glob matches exp_w  []       =  [exp_w]
       select glob matches _      matches  =  matches
+
+fn :: split by ifs loop String Int Int String String [String] => [String]
+      split by ifs loop s idx len ifs cur acc =
+        | idx >= len = push nonempty cur acc
+        | (find char idx ifs 0 (str len ifs) (str char at s idx)) >= 0 =
+      split by ifs loop s (idx + 1) len ifs "" (push nonempty cur acc)
+        | otherwise =
+          split by ifs loop s (idx + 1) len ifs (cur + (str slice s idx (idx + 1))) acc
+
+fn :: split word by ifs String String ShEnv => [String]
+      split word by ifs raw_w exp_w env =
+        ifs = lookup var (env_vars env) "IFS"
+        split word by ifs check raw_w exp_w ifs
+
+fn :: split word by ifs check String String String => [String]
+      split word by ifs check raw_w exp_w ifs =
+        | ((str len ifs) > 0) and ((not (is raw token quoted raw_w 0 (str len raw_w))) and ((find char idx raw_w 0 (str len raw_w) 36) >= 0)) =
+          split by ifs loop exp_w 0 (str len exp_w) ifs "" []
+        | otherwise = [exp_w]
+
+fn :: glob expand list [String] String ShEnv [String] => [String]
+      glob expand list [] _ _ acc = acc
+      glob expand list (piece:rest) raw_w env acc =
+        glob expand list rest raw_w env (acc :: (glob expand single raw_w piece env))
 
 fn :: expand sh words [String] ShEnv [String] => [String] ShEnv
 expand sh words [] env acc = (acc, env)
@@ -1815,7 +2281,8 @@ expand sh words (w:rest) env acc =
   | env_exited env = (acc, env)
         | otherwise =
           w_res = expand sh word w env
-          globbed = glob expand single w (fst w_res) (snd w_res)
+          pieces = split word by ifs w (fst w_res) (snd w_res)
+          globbed = glob expand list pieces w (snd w_res) []
 expand sh words rest (snd w_res) (acc :: globbed)
 
 -- ----------------------------------------------------------------------------
@@ -1836,6 +2303,90 @@ op :: evaluate shell ShNode in ShEnv => ShEnv
       evaluate shell node   in env   =
         | is sh interrupted env = env
         | otherwise             = eval sh active node env
+
+fn :: restore subshell env clear [MakeVar] [MakeVar] => Int
+      restore subshell env clear [] _ = 0
+      restore subshell env clear ((MVar k _):rest) orig_vars =
+        _ = restore subshell one k orig_vars
+        restore subshell env clear rest orig_vars
+
+fn :: restore subshell one String [MakeVar] => Int
+      restore subshell one k      orig_vars =
+        | has var orig_vars k = sys setenv k (lookup var orig_vars k)
+        | otherwise           = sys setenv k ""
+
+fn :: restore subshell env set [MakeVar]         => Int
+      restore subshell env set []                =  0
+      restore subshell env set ((MVar k v):rest) =
+        _ = sys setenv k v
+        restore subshell env set rest
+
+fn :: eval sh subshell isolated ShNode ShEnv => ShEnv
+      eval sh subshell isolated sub env =
+        orig_cwd = sys getcwd
+        orig_umask = sys call 95 0 0 0 0 0 0
+        _ = sys call 95 orig_umask 0 0 0 0 0
+        orig_vars = env_vars env
+        sub_env = evaluate shell sub in env
+        _ = sys chdir orig_cwd
+        _ = sys call 95 orig_umask 0 0 0 0 0
+        _ = restore subshell env clear (env_vars sub_env) orig_vars
+        _ = restore subshell env set orig_vars
+        apply errexit check (env with env_status = env_status sub_env, env_out = env_out sub_env)
+
+fn :: dispatch sh bg fork Int ShNode ShEnv => ShEnv
+      dispatch sh bg fork 0 sub env =
+        sub_env = evaluate shell sub in (env with env_out = "")
+        _ = write if non empty 1 (env_out sub_env)
+        _ = posix exit (env_status sub_env)
+        env
+      dispatch sh bg fork pid _ env =
+        | pid < 0   = env with env_status = 1
+        | otherwise = env with env_bg_pid = pid, env_status = 0
+
+fn :: split leading assigns [String] [String] => [String] [String]
+      split leading assigns []       acc      =  (acc, [])
+      split leading assigns (w:rest) acc      =
+        | is var assign tok w = split leading assigns rest (acc :: [w])
+        | otherwise           = (acc, [w] :: rest)
+
+fn :: apply assign words [String] ShEnv [String] => ShEnv [String]
+      apply assign words [] env keys = (env, keys)
+      apply assign words (w:rest) env keys =
+        | env_exited env = (env, keys)
+        | otherwise =
+          eq_i = find char idx w 0 (str len w) 61
+          k = str slice w 0 eq_i
+          raw_v = str slice w (eq_i + 1) (str len w)
+          v_res = expand sh word raw_v env
+          env1 = finish sh assign k (fst v_res) (snd v_res)
+          apply assign words rest env1 (keys :: [k])
+
+fn :: eval sh simple node [String] [Redir] ShEnv => ShEnv
+      eval sh simple node raw_words redirs env =
+        sp = split leading assigns raw_words []
+        asn_words = fst sp
+        cmd_words = snd sp
+        eval sh simple split asn_words cmd_words redirs env
+
+fn :: eval sh simple split [String] [String] [Redir] ShEnv => ShEnv
+      eval sh simple split [] cmd_words redirs env =
+        w_res = expand sh words cmd_words env []
+        eval sh simple expanded (fst w_res) redirs (snd w_res)
+      eval sh simple split asn_words [] redirs env =
+        ap = apply assign words asn_words env []
+        env1 = fst ap
+        out_applied = apply out redirs "" redirs env1
+        env1 with env_out = out_applied
+      eval sh simple split asn_words cmd_words redirs env =
+        orig_vars = env_vars env
+        ap = apply assign words asn_words env []
+        env_with_p = fst ap
+        p_keys = snd ap
+        w_res = expand sh words cmd_words env_with_p []
+        after_cmd = eval sh simple expanded (fst w_res) redirs (snd w_res)
+        restored_vars = restore local vars p_keys orig_vars (env_vars after_cmd)
+        after_cmd with env_vars = restored_vars
 
 fn :: eval sh active ShNode           ShEnv => ShEnv
       eval sh active (ShAssign k v)   env   =
@@ -1859,10 +2410,11 @@ fn :: eval sh active ShNode           ShEnv => ShEnv
         inv_st = invert status (env_status env1)
         env1 with env_status = inv_st, env_noerrexit_ctx = env_noerrexit_ctx env
       eval sh active (ShSubshell sub) env   =
-        sub_env = evaluate shell sub in env
-        apply errexit check (env with env_status = env_status sub_env, env_out = env_out sub_env)
+        eval sh subshell isolated sub env
       eval sh active (ShBrace sub)    env   =
         evaluate shell sub in env
+      eval sh active (ShBg sub)       env   =
+        dispatch sh bg fork (posix fork) sub env
       eval sh active (ShIf cond_n then_n else_n) env =
         env_c = evaluate shell cond_n in (env with env_noerrexit_ctx = True)
         env_cr = env_c with env_noerrexit_ctx = env_noerrexit_ctx env
@@ -1879,8 +2431,7 @@ fn :: eval sh active ShNode           ShEnv => ShEnv
       eval sh active (ShPipe left right) env =
         eval sh pipe left right env
       eval sh active (ShSimple raw_words redirs) env =
-        w_res = expand sh words raw_words env []
-        eval sh simple expanded (fst w_res) redirs (snd w_res)
+        eval sh simple node raw_words redirs env
 
 fn :: finish sh assign String String ShEnv => ShEnv
       finish sh assign k exp_v env =
@@ -1930,7 +2481,7 @@ fn :: eval sh if branch ShNode ShNode ShEnv => ShEnv
 
 fn :: eval sh while loop ShNode ShNode ShEnv Int => ShEnv
       eval sh while loop cond_n body_n env steps =
-        | (is sh interrupted env) or (steps >= 1000) = env
+        | is sh interrupted env = env
         | otherwise =
           env_c = evaluate shell cond_n in (env with env_noerrexit_ctx = True)
           env_cr = env_c with env_noerrexit_ctx = env_noerrexit_ctx env
@@ -1945,7 +2496,7 @@ fn :: continue sh while ShNode ShNode ShEnv Int => ShEnv
 
 fn :: eval sh until loop ShNode ShNode ShEnv Int => ShEnv
       eval sh until loop cond_n body_n env steps =
-        | (is sh interrupted env) or (steps >= 1000) = env
+        | is sh interrupted env = env
         | otherwise =
           env_c = evaluate shell cond_n in (env with env_noerrexit_ctx = True)
           env_cr = env_c with env_noerrexit_ctx = env_noerrexit_ctx env
@@ -2029,6 +2580,29 @@ fn :: extract input redirs [Redir]            ShEnv => String ShEnv
       extract input redirs (_:rest)           env   =
         extract input redirs rest env
 
+fn :: has err file redir [Redir]  => Bool
+      has err file redir []       =  False
+      has err file redir ((RedirErrOut _):_) = True
+      has err file redir ((RedirErrAppend _):_) = True
+      has err file redir (_:rest) =  has err file redir rest
+
+fn :: apply err redirs String [Redir] ShEnv => Int
+      apply err redirs _ [] _ = 0
+      apply err redirs text ((RedirErrOut f):rest) env =
+        target = fst (expand sh word f env)
+        _ = write file target text
+        apply err redirs "" rest env
+      apply err redirs text ((RedirErrAppend f):rest) env =
+        target = fst (expand sh word f env)
+        _ = append file target text
+        apply err redirs "" rest env
+      apply err redirs text (_:rest) env = apply err redirs text rest env
+
+fn :: route out to err String [Redir] ShEnv => Int
+      route out to err text redirs env =
+        | has err file redir redirs = apply err redirs text redirs env
+        | otherwise                 = write if non empty 2 text
+
 fn :: apply out redirs String [Redir] ShEnv => String
       apply out redirs text [] env = (env_out env) + text
       apply out redirs text ((RedirOut f):rest) env =
@@ -2039,6 +2613,9 @@ fn :: apply out redirs String [Redir] ShEnv => String
         target = fst (expand sh word f env)
         _ = append file target text
         apply out redirs "" rest env
+      apply out redirs text (RedirOutToErr:rest) env =
+        _ = route out to err text rest env
+        apply out redirs "" rest env
       apply out redirs text (_:rest) env = apply out redirs text rest env
 
 fn :: eval sh simple expanded [String] [Redir] ShEnv => ShEnv
@@ -2048,9 +2625,12 @@ fn :: eval sh simple expanded [String] [Redir] ShEnv => ShEnv
           in_pair = extract input redirs redirs env
           eval sh simple words redirs (snd in_pair)
 
-fn :: eval sh simple [String] [Redir] ShEnv => ShEnv
-      eval sh simple [] _ env = env
-      eval sh simple (cmd:args) redirs env =
+fn :: is sh builtin name String => Bool
+      is sh builtin name cmd    =
+        (cmd == ":") or ((cmd == "true") or ((cmd == "false") or ((cmd == "echo") or ((cmd == "printf") or ((cmd == "read") or ((cmd == "cd") or ((cmd == "pwd") or ((cmd == "export") or ((cmd == "readonly") or ((cmd == "local") or ((cmd == "unset") or ((cmd == "shift") or ((cmd == "set") or ((cmd == "return") or ((cmd == "break") or ((cmd == "continue") or ((cmd == "eval") or ((cmd == "trap") or ((cmd == "exit") or ((cmd == "test") or ((cmd == "[") or ((cmd == ".") or ((cmd == "umask") or ((cmd == "command") or ((cmd == "type") or ((cmd == "getopts") or ((cmd == "exec") or ((cmd == "wait") or (cmd == "kill")))))))))))))))))))))))))))))
+
+fn :: eval sh simple nofunc String [String] [Redir] ShEnv => ShEnv
+      eval sh simple nofunc cmd args redirs env =
         | cmd == ":"                      = env with env_status = 0
         | cmd == "true"                   = env with env_status = 0
         | cmd == "false"                  = apply errexit check (env with env_status = 1)
@@ -2073,16 +2653,25 @@ fn :: eval sh simple [String] [Redir] ShEnv => ShEnv
         | cmd == "exit"                   = eval builtin exit args env
         | (cmd == "test") or (cmd == "[") = apply errexit check (eval builtin test cmd args env)
         | cmd == "."                      = eval builtin source args env
-        | (cmd == "cat") and ((list len args) == 0) =
-          env with env_status = 0, env_out = apply out redirs (env_stdin env) redirs env, env_stdin = ""
-        | otherwise                       =
-          dispatch func or external (lookup sh func (env_funcs env) cmd) cmd args redirs env
+        | cmd == "umask"                  = eval builtin umask args redirs env
+        | cmd == "command"                = eval builtin command args redirs env
+        | cmd == "type"                   = eval builtin type args redirs env
+        | cmd == "getopts"                = eval builtin getopts args env
+        | cmd == "exec"                   = eval builtin exec args redirs env
+        | cmd == "wait"                   = eval builtin wait args env
+        | cmd == "kill"                   = eval builtin kill args env
+        | otherwise                       = apply errexit check (run external capture ([cmd] :: args) redirs env)
 
-fn :: dispatch func or external (Bool, ShNode) String [String] [Redir] ShEnv => ShEnv
-      dispatch func or external (True, fn_body) _ args redirs env =
+fn :: eval sh simple [String] [Redir] ShEnv => ShEnv
+      eval sh simple [] _ env = env
+      eval sh simple (cmd:args) redirs env =
+        eval sh simple check func (lookup sh func (env_funcs env) cmd) cmd args redirs env
+
+fn :: eval sh simple check func (Bool, ShNode) String [String] [Redir] ShEnv => ShEnv
+      eval sh simple check func (True, fn_body) _ args redirs env =
         call sh function fn_body args redirs env
-      dispatch func or external (False, _) cmd args redirs env =
-        apply errexit check (run external capture ([cmd] :: args) redirs env)
+      eval sh simple check func (False, _) cmd args redirs env =
+        eval sh simple nofunc cmd args redirs env
 
 fn :: restore local vars [String] [MakeVar] [MakeVar] => [MakeVar]
       restore local vars [] _ cur_vars = cur_vars
@@ -2159,8 +2748,17 @@ fn :: dup err if needed Bool Int => Int
       dup err if needed False _ = 0
       dup err if needed True out_fd = posix dup2 out_fd 2
 
-fn :: execve child branch String [String] [String] Int Int Int Int Bool => Int
-      execve child branch resolved argv envp in_rfd in_wfd out_rfd out_wfd merge_err =
+fn :: dup err pipe if needed Bool Int Int Int => Int
+      dup err pipe if needed False _ err_rfd err_wfd =
+        _ = posix close err_rfd
+        posix close err_wfd
+      dup err pipe if needed True _ err_rfd err_wfd =
+        _ = posix close err_rfd
+        _ = posix dup2 err_wfd 2
+        posix close err_wfd
+
+fn :: execve child branch String [String] [String] Int Int Int Int Int Int Bool Bool => Int
+      execve child branch resolved argv envp in_rfd in_wfd out_rfd out_wfd err_rfd err_wfd merge_err cap_err =
         _ = posix close in_wfd
         _ = posix close out_rfd
         _ = posix dup2 in_rfd 0
@@ -2168,35 +2766,47 @@ fn :: execve child branch String [String] [String] Int Int Int Int Bool => Int
         _ = posix dup2 out_wfd 1
         _ = dup err if needed merge_err out_wfd
         _ = posix close out_wfd
+        _ = dup err pipe if needed cap_err out_wfd err_rfd err_wfd
         _ = posix execve resolved argv envp
         _ = posix execve "/bin/sh" (["/bin/sh"] :: argv) envp
         posix exit 127
 
-fn :: wait ext parent Int Int Int Int Int String [Redir] ShEnv => ShEnv
-      wait ext parent pid in_rfd in_wfd out_rfd out_wfd stdin_data redirs env =
+fn :: read err pipe if needed Bool Int [Redir] ShEnv => Int
+      read err pipe if needed False err_rfd _ _ = posix close err_rfd
+      read err pipe if needed True err_rfd redirs env =
+        err_cap = read fd all err_rfd ""
+        _ = posix close err_rfd
+        apply err redirs err_cap redirs env
+
+fn :: wait ext parent Int Int Int Int Int Int Int Bool String [Redir] ShEnv => ShEnv
+      wait ext parent pid in_rfd in_wfd out_rfd out_wfd err_rfd err_wfd cap_err stdin_data redirs env =
         _ = posix close in_rfd
         _ = posix close out_wfd
+        _ = posix close err_wfd
         _ = write if non empty in_wfd stdin_data
         _ = posix close in_wfd
         captured = read fd all out_rfd ""
         _ = posix close out_rfd
+        _ = read err pipe if needed cap_err err_rfd redirs env
         wp = posix waitpid pid 0
         rc = decode proc status (waitpid decode status (snd wp))
         env with env_status = rc, env_out = apply out redirs captured redirs env, env_stdin = ""
 
-fn :: dispatch ext fork Int String [String] [String] Int Int Int Int Bool String [Redir] ShEnv => ShEnv
-      dispatch ext fork 0 resolved argv envp in_rfd in_wfd out_rfd out_wfd merge_err _ _ env =
-        _ = execve child branch resolved argv envp in_rfd in_wfd out_rfd out_wfd merge_err
+fn :: dispatch ext fork Int String [String] [String] Int Int Int Int Int Int Bool Bool String [Redir] ShEnv => ShEnv
+      dispatch ext fork 0 resolved argv envp in_rfd in_wfd out_rfd out_wfd err_rfd err_wfd merge_err cap_err _ _ env =
+        _ = execve child branch resolved argv envp in_rfd in_wfd out_rfd out_wfd err_rfd err_wfd merge_err cap_err
         env
-      dispatch ext fork pid _ _ _ in_rfd in_wfd out_rfd out_wfd _ stdin_data redirs env =
+      dispatch ext fork pid _ _ _ in_rfd in_wfd out_rfd out_wfd err_rfd err_wfd _ cap_err stdin_data redirs env =
         | pid < 0 =
           _ = posix close in_rfd
           _ = posix close in_wfd
           _ = posix close out_rfd
           _ = posix close out_wfd
+          _ = posix close err_rfd
+          _ = posix close err_wfd
           env with env_status = 1, env_stdin = ""
         | otherwise =
-          wait ext parent pid in_rfd in_wfd out_rfd out_wfd stdin_data redirs env
+          wait ext parent pid in_rfd in_wfd out_rfd out_wfd err_rfd err_wfd cap_err stdin_data redirs env
 
 fn :: run external checked Int String [String] [Redir] ShEnv => ShEnv
       run external checked 127 _ _ _ env = env with env_status = 127, env_stdin = ""
@@ -2204,14 +2814,18 @@ fn :: run external checked Int String [String] [Redir] ShEnv => ShEnv
       run external checked _ resolved args redirs env =
         p_in = posix pipe
         p_out = posix pipe
+        p_err = posix pipe
         in_rfd = snd3 p_in
         in_wfd = trd3 p_in
         out_rfd = snd3 p_out
         out_wfd = trd3 p_out
+        err_rfd = snd3 p_err
+        err_wfd = trd3 p_err
         envp = collect sh env list (env_vars env) False []
         stdin_data = resolve ext stdin redirs env (env_stdin env)
         merge_err = has err to out redirs
-        dispatch ext fork (posix fork) resolved ([resolved] :: args) envp in_rfd in_wfd out_rfd out_wfd merge_err stdin_data redirs env
+        cap_err = has err file redir redirs
+        dispatch ext fork (posix fork) resolved ([resolved] :: args) envp in_rfd in_wfd out_rfd out_wfd err_rfd err_wfd merge_err cap_err stdin_data redirs env
 
 fn :: run external resolved String [String] [Redir] ShEnv => ShEnv
       run external resolved "" _ _ env =
@@ -2328,6 +2942,10 @@ fn :: eval builtin printf [String] [Redir] ShEnv => ShEnv
         out = apply out redirs rendered redirs env
         env with env_status = 0, env_out = out
 
+fn :: split read line String String => [String]
+      split read line line   ""     =  split whitespace line
+      split read line line   ifs    =  split by ifs loop line 0 (str len line) ifs "" []
+
 fn :: eval builtin read [String] ShEnv => ShEnv
       eval builtin read vars     env   =
         | (str len (env_stdin env)) == 0 = env with env_status = 1
@@ -2335,7 +2953,8 @@ fn :: eval builtin read [String] ShEnv => ShEnv
           nl_i = find line end (env_stdin env) 0 (str len (env_stdin env))
           line = str slice (env_stdin env) 0 nl_i
           rem_in = str slice (env_stdin env) (min int (str len (env_stdin env)) (nl_i + 1)) (str len (env_stdin env))
-          words = split whitespace line
+          ifs = lookup var (env_vars env) "IFS"
+          words = split read line line ifs
           bind read vars vars words (env with env_stdin = rem_in, env_status = 0)
 
 fn :: bind read vars [String] [String] ShEnv => ShEnv
@@ -2458,13 +3077,279 @@ fn :: eval builtin eval [String] ShEnv => ShEnv
         node = parse shell (tokenize shell script)
         evaluate shell node in env
 
+fn :: norm sh trap stripped String => String
+      norm sh trap stripped s      =
+        | (s == "EXIT") or (s == "0")                   = "EXIT"
+        | (s == "HUP") or ((s == "hup") or (s == "1"))   = "HUP"
+        | (s == "INT") or ((s == "int") or (s == "2"))   = "INT"
+        | (s == "QUIT") or ((s == "quit") or (s == "3")) = "QUIT"
+        | (s == "TERM") or ((s == "term") or (s == "15")) = "TERM"
+        | otherwise                                     = s
+
+fn :: norm sh trap sig String => String
+      norm sh trap sig raw    =  norm sh trap stripped (strip sig prefix raw)
+
+fn :: apply trap sigs String [String] ShEnv => ShEnv
+      apply trap sigs _ [] env = env with env_status = 0
+      apply trap sigs action (sig_raw:rest) env =
+        ns = norm sh trap sig sig_raw
+        apply trap one action ns rest env
+
+fn :: apply trap one String String [String] ShEnv => ShEnv
+      apply trap one "-" "EXIT" rest env =
+        apply trap sigs "-" rest (env with env_exit_trap = "")
+      apply trap one "-" ns rest env =
+        apply trap sigs "-" rest (env with env_sig_traps = remove var (env_sig_traps env) ns [])
+      apply trap one action "EXIT" rest env =
+        apply trap sigs action rest (env with env_exit_trap = action)
+      apply trap one action ns rest env =
+        apply trap sigs action rest (env with env_sig_traps = set var (env_sig_traps env) ns action [])
+
 fn :: eval builtin trap [String]      ShEnv => ShEnv
       eval builtin trap []            env   =  env with env_status = 0
-      eval builtin trap (action:sigs) env   =
-        | (list contains str sigs "EXIT") or (list contains str sigs "0") =
-          env with env_exit_trap = action, env_status = 0
+      eval builtin trap (action:sigs) env   =  apply trap sigs action sigs env
+
+fn :: format octal4 Int => String
+      format octal4 m   =
+        d0 = (m / 512) % 8
+        d1 = (m / 64) % 8
+        d2 = (m / 8) % 8
+        d3 = m % 8
+        (int to str d0) + (int to str d1) + (int to str d2) + (int to str d3)
+
+fn :: parse octal str String Int Int Int => Int
+      parse octal str s idx len acc =
+        | idx >= len = acc
+        | ((str char at s idx) >= 48) and ((str char at s idx) <= 55) =
+      parse octal str s (idx + 1) len ((acc * 8) + ((str char at s idx) - 48))
+        | otherwise = acc
+
+fn :: eval builtin umask [String] [Redir] ShEnv => ShEnv
+      eval builtin umask [] redirs env =
+        m = sys call 95 0 0 0 0 0 0
+        _ = sys call 95 m 0 0 0 0 0
+        out = apply out redirs ((format octal4 m) + (char from code 10)) redirs env
+        env with env_status = 0, env_out = out
+      eval builtin umask (mask_s:_) _ env =
+        nm = parse octal str mask_s 0 (str len mask_s) 0
+        _ = sys call 95 nm 0 0 0 0 0
+        env with env_status = 0
+
+fn :: resolve sh path var ShEnv => String
+      resolve sh path var env   =
+        select non empty (lookup var (env_vars env) "PATH") (select non empty (sys getenv "PATH") "/usr/local/bin:/usr/bin:/bin")
+
+fn :: check command v resolved String => Bool String
+      check command v resolved ""     =  (False, "")
+      check command v resolved res    =  (True, res)
+
+fn :: resolve command v one String ShEnv => Bool String
+      resolve command v one nm env =
+        | fst (lookup sh func (env_funcs env) nm) = (True, nm)
+        | is sh builtin name nm                   = (True, nm)
+        | otherwise                               = check command v resolved (resolve exec cmd path nm (resolve sh path var env))
+
+fn :: eval command v loop [String] ShEnv String Int => String Int
+      eval command v loop [] _ acc st = (acc, st)
+      eval command v loop (nm:rest) env acc st =
+        r = resolve command v one nm env
+        eval command v step r rest env acc st
+
+fn :: eval command v step (Bool, String) [String] ShEnv String Int => String Int
+      eval command v step (True, line) rest env acc st =
+        eval command v loop rest env (acc + line + (char from code 10)) st
+      eval command v step (False, _) rest env acc _ =
+        eval command v loop rest env acc 1
+
+fn :: eval builtin command [String] [Redir] ShEnv => ShEnv
+      eval builtin command [] _ env = env with env_status = 0
+      eval builtin command ("-v":names) redirs env =
+        res = eval command v loop names env "" 0
+        out = apply out redirs (fst res) redirs env
+        apply errexit check (env with env_status = snd res, env_out = out)
+      eval builtin command (sub_cmd:sub_args) redirs env =
+        eval sh simple nofunc sub_cmd sub_args redirs env
+
+fn :: check type resolved String String => Bool String
+      check type resolved nm     ""     =  (False, nm + ": not found")
+      check type resolved nm     res    =  (True, nm + " is " + res)
+
+fn :: describe type one String ShEnv => Bool String
+      describe type one nm     env   =
+        | fst (lookup sh func (env_funcs env) nm) = (True, nm + " is a shell function")
+        | is sh builtin name nm                   = (True, nm + " is a shell builtin")
+        | otherwise                               = check type resolved nm (resolve exec cmd path nm (resolve sh path var env))
+
+fn :: eval type loop [String] ShEnv String Int => String Int
+      eval type loop [] _ acc st = (acc, st)
+      eval type loop (nm:rest) env acc st =
+        r = describe type one nm env
+        next_st = select type status (fst r) st
+        eval type loop rest env (acc + (snd r) + (char from code 10)) next_st
+
+fn :: select type status Bool  Int => Int
+      select type status True  st  =  st
+      select type status False _   =  1
+
+fn :: eval builtin type [String] [Redir] ShEnv => ShEnv
+      eval builtin type names redirs env =
+        res = eval type loop names env "" 0
+        out = apply out redirs (fst res) redirs env
+        apply errexit check (env with env_status = snd res, env_out = out)
+
+fn :: select getopts args [String] [String] => [String]
+      select getopts args []       pos_args =  pos_args
+      select getopts args expl     _        =  expl
+
+fn :: sync getopts pos [String] [String] => [String]
+      sync getopts pos []       pos_args =  pos_args
+      sync getopts pos expl     []       =  expl
+      sync getopts pos _        pos_args =  pos_args
+
+fn :: advance getopts cursor String Int Int ShEnv => ShEnv
+      advance getopts cursor cur_arg optind optchar env =
+        | (optchar + 1) < (str len cur_arg) =
+          env1 = assign sh var "OPTIND" (int to str optind) env
+          env1 with env_vars = set var (env_vars env1) "__SH_OPTCHAR__" (int to str (optchar + 1)) []
         | otherwise =
+          env1 = assign sh var "OPTIND" (int to str (optind + 1)) env
+          env1 with env_vars = set var (env_vars env1) "__SH_OPTCHAR__" "1" []
+
+fn :: select unknown optarg String String => String
+      select unknown optarg optstr ch_s   =
+        | str starts with optstr ":" = ch_s
+        | otherwise                  = ""
+
+fn :: getopts unknown opt String String String Int Int String ShEnv => ShEnv
+      getopts unknown opt optstr varname cur_arg optind optchar ch_s env =
+        env1 = advance getopts cursor cur_arg optind optchar env
+        env2 = assign sh var varname "?" env1
+        env3 = assign sh var "OPTARG" (select unknown optarg optstr ch_s) env2
+        env3 with env_status = 0
+
+fn :: getopts arg opt String String String [String] Int Int String ShEnv => ShEnv
+      getopts arg opt optstr varname cur_arg targs optind optchar ch_s env =
+        | (optchar + 1) < (str len cur_arg) =
+          val = str slice cur_arg (optchar + 1) (str len cur_arg)
+          env1 = assign sh var "OPTIND" (int to str (optind + 1)) env
+          env2 = assign sh var varname ch_s env1
+          env3 = assign sh var "OPTARG" val env2
+          env3 with env_status = 0
+        | optind < (list len targs) =
+          val = str list nth targs optind
+          env1 = assign sh var "OPTIND" (int to str (optind + 2)) env
+          env2 = assign sh var varname ch_s env1
+          env3 = assign sh var "OPTARG" val env2
+          env3 with env_status = 0
+        | otherwise =
+          env1 = assign sh var "OPTIND" (int to str (optind + 1)) env
+          getopts missing arg optstr varname ch_s env1
+
+fn :: getopts missing arg String String String ShEnv => ShEnv
+      getopts missing arg optstr varname ch_s env =
+        | str starts with optstr ":" =
+          env1 = assign sh var varname ":" env
+          (assign sh var "OPTARG" ch_s env1) with env_status = 0
+        | otherwise =
+          env1 = assign sh var varname "?" env
+          (assign sh var "OPTARG" "" env1) with env_status = 0
+
+fn :: getopts dispatch char String String String [String] Int Int Int Int String ShEnv => ShEnv
+      getopts dispatch char optstr varname cur_arg targs optind optchar ch opt_i ch_s env =
+        | (ch == 58) or (opt_i < 0) =
+          getopts unknown opt optstr varname cur_arg optind optchar ch_s env
+        | ((opt_i + 1) < (str len optstr)) and ((str char at optstr (opt_i + 1)) == 58) =
+          getopts arg opt optstr varname cur_arg targs optind optchar ch_s env
+        | otherwise =
+          env1 = advance getopts cursor cur_arg optind optchar env
+          env2 = assign sh var varname ch_s env1
+          (assign sh var "OPTARG" "" env2) with env_status = 0
+
+fn :: getopts inspect arg String String String [String] Int Int ShEnv => ShEnv
+      getopts inspect arg optstr varname cur_arg targs optind optchar env =
+        | cur_arg == "--" =
+          env1 = assign sh var "OPTIND" (int to str (optind + 1)) env
+          env2 = assign sh var varname "?" env1
+          env2 with env_status = 1
+        | ((str len cur_arg) < 2) or (((str char at cur_arg 0) != 45) or (cur_arg == "-")) =
+          env1 = assign sh var varname "?" env
+          env1 with env_status = 1
+        | otherwise =
+          ch = str char at cur_arg optchar
+          ch_s = str slice cur_arg optchar (optchar + 1)
+          opt_i = find char idx optstr 0 (str len optstr) ch
+          getopts dispatch char optstr varname cur_arg targs optind optchar ch opt_i ch_s env
+
+fn :: eval getopts step String String [String] Int Int ShEnv => ShEnv
+      eval getopts step optstr varname targs optind optchar env =
+        | optind > (list len targs) =
+          env1 = assign sh var varname "?" env
+          env1 with env_status = 1
+        | otherwise =
+          cur_arg = str list nth targs (optind - 1)
+          getopts inspect arg optstr varname cur_arg targs optind optchar env
+
+fn :: eval builtin getopts [String] ShEnv => ShEnv
+      eval builtin getopts (optstr:varname:expl) env =
+        targs = select getopts args expl (env_pos env)
+        env_p = env with env_pos = sync getopts pos expl (env_pos env)
+        optind = max one (parse opt digits (lookup sh param "OPTIND" env_p))
+        optchar = max one (parse opt digits (lookup var (env_vars env_p) "__SH_OPTCHAR__"))
+        eval getopts step optstr varname targs optind optchar env_p
+      eval builtin getopts _        env   =  env with env_status = 1
+
+fn :: eval builtin exec [String] [Redir] ShEnv => ShEnv
+      eval builtin exec [] redirs env =
+        out = apply out redirs "" redirs env
+        env with env_status = 0, env_out = out
+      eval builtin exec (sub_cmd:sub_args) redirs env =
+        env1 = eval sh simple ([sub_cmd] :: sub_args) redirs env
+        env1 with env_exited = True
+
+fn :: eval builtin wait [String]  ShEnv => ShEnv
+      eval builtin wait []        env   =
+        | (env_bg_pid env) > 0 =
+          _ = posix waitpid (env_bg_pid env) 0
           env with env_status = 0
+        | otherwise = env with env_status = 0
+      eval builtin wait (pid_s:_) env   =
+        wp = posix waitpid (parse opt digits pid_s) 0
+        rc = decode proc status (waitpid decode status (snd wp))
+        env with env_status = rc
+
+fn :: trigger self signal String   ShEnv => ShEnv
+      trigger self signal norm_sig env   =
+        | has var (env_sig_traps env) norm_sig =
+          act = lookup var (env_sig_traps env) norm_sig
+          node = parse shell (tokenize shell act)
+          evaluate shell node in env
+        | otherwise =
+          _ = posix kill (sys getpid) (parse signal num norm_sig)
+          env with env_status = 0
+
+fn :: deliver kill pid String Int ShEnv => ShEnv
+      deliver kill pid norm_sig tpid env =
+        | tpid == (sys getpid) = trigger self signal norm_sig env
+        | otherwise =
+          _ = posix kill tpid (parse signal num norm_sig)
+          env with env_status = 0
+
+fn :: eval kill pids String [String] ShEnv => ShEnv
+      eval kill pids _ [] env = env
+      eval kill pids norm_sig (p_s:rest) env =
+        env1 = deliver kill pid norm_sig (parse opt digits p_s) env
+        eval kill pids norm_sig rest env1
+
+fn :: eval builtin kill [String]        ShEnv => ShEnv
+      eval builtin kill []              env   =  env with env_status = 1
+      eval builtin kill ("-s":sig:pids) env   =
+        eval kill pids (norm sh trap sig sig) pids env
+      eval builtin kill (first:rest)    env   =
+        | str starts with first "-" =
+          sig = str slice first 1 (str len first)
+          eval kill pids (norm sh trap sig sig) rest env
+        | otherwise =
+          eval kill pids "TERM" ([first] :: rest) env
 
 fn :: eval builtin exit [String] ShEnv => ShEnv
       eval builtin exit []       env   =  env with env_exited = True
@@ -2558,7 +3443,7 @@ op :: run shell script String with [String] => String Int
       run shell script src    with pos_args =
         toks = tokenize shell src
         ast = parse shell toks
-        init_env = ShEnv [] [] [] [] pos_args 0 "" "" False False 0 0 False False False False ""
+        init_env = ShEnv [] [] [] [] pos_args 0 "" "" False False 0 0 False False False False "" 0 []
         final_env = run exit trap if any (evaluate shell ast in init_env)
         (env_out final_env, env_status final_env)
 
@@ -2747,33 +3632,42 @@ fn :: drain ready fd Int String => String
         | (sys poll rfd 1 0) <= 0 = acc
         | otherwise               = drain ready step rfd (posix read rfd 4096) acc
 
-fn :: escalate kill check Int (Int, Int) => Int
-      escalate kill check pid (0, _)     =
-        _ = posix kill pid 9
+fn :: select timeout kill target Int Bool => Int
+      select timeout kill target pid True = pid
+      select timeout kill target pid False = 0 - pid
+
+fn :: apply timeout setpgid Int Int Bool => Int
+      apply timeout setpgid _ _ True = 0
+      apply timeout setpgid pid pgid False = sys call 109 pid pgid 0 0 0 0
+
+fn :: escalate kill check Int Int (Int, Int) => Int
+      escalate kill check pid ktarget (0, _) =
+        _ = posix kill ktarget 9
         _ = posix waitpid pid 0
         0
-      escalate kill check _   _          =  0
+      escalate kill check _ _ _ = 0
 
-fn :: escalate kill step Int Int (Int, Int) => Int
-      escalate kill step pid kill_ms (0, _) =
+fn :: escalate kill step Int Int Int (Int, Int) => Int
+      escalate kill step pid ktarget kill_ms (0, _) =
         | kill_ms <= 0 =
-          _ = posix kill pid 9
+          _ = posix kill ktarget 9
           _ = posix waitpid pid 0
           0
         | otherwise =
           _ = sys poll 0 1 (min timeout wait kill_ms)
-          escalate kill check pid (posix waitpid pid wnohang)
-      escalate kill step _ _ _ = 0
+          escalate kill check pid ktarget (posix waitpid pid wnohang)
+      escalate kill step _ _ _ _ = 0
 
-fn :: escalate kill wait Int Int     => Int
-      escalate kill wait pid kill_ms =
-        escalate kill step pid kill_ms (posix waitpid pid wnohang)
+fn :: escalate kill wait Int Int Int => Int
+      escalate kill wait pid ktarget kill_ms =
+        escalate kill step pid ktarget kill_ms (posix waitpid pid wnohang)
 
 fn :: wait timeout step Int Int Int Int Int TimeoutSpec String (Int, Int) => String Int
       wait timeout step pid rfd deadline_ms kill_ms sig_num spec acc1 (0, _) =
         | (sys monotonic ms) >= deadline_ms =
-          _ = posix kill pid sig_num
-          _ = escalate kill wait pid kill_ms
+          ktarget = select timeout kill target pid (to_foreground spec)
+          _ = posix kill ktarget sig_num
+          _ = escalate kill wait pid ktarget kill_ms
           final_out = read fd all rfd acc1
           _ = posix close rfd
           (final_out, timeout expiry status spec sig_num)
@@ -2791,7 +3685,8 @@ fn :: wait timeout loop Int Int Int Int Int TimeoutSpec String => String Int
         wait timeout step pid rfd deadline_ms kill_ms sig_num spec acc1 (posix waitpid pid wnohang)
 
 fn :: dispatch timeout fork Int String [String] Int Int Int TimeoutSpec => String Int
-      dispatch timeout fork 0 resolved argv rfd wfd _ _ =
+      dispatch timeout fork 0 resolved argv rfd wfd _ spec =
+        _ = apply timeout setpgid 0 0 (to_foreground spec)
         _ = posix close rfd
         _ = posix dup2 wfd 1
         _ = posix dup2 wfd 2
@@ -2805,6 +3700,7 @@ fn :: dispatch timeout fork Int String [String] Int Int Int TimeoutSpec => Strin
           _ = posix close wfd
           ("", 125)
         | otherwise =
+          _ = apply timeout setpgid pid pid (to_foreground spec)
           _ = posix close wfd
           deadline = (sys monotonic ms) + (to_dur_ms spec)
           wait timeout loop pid rfd deadline (to_kill_ms spec) sig_num spec ""
@@ -2843,6 +3739,8 @@ fn :: parse nc flags [String] [String] NcSpec => NcSpec
       parse nc flags [] pos spec = finalize nc pos pos spec
       parse nc flags ("-l":rest) pos spec = parse nc flags rest pos (spec with nc_listen = True)
       parse nc flags ("-u":rest) pos spec = parse nc flags rest pos (spec with nc_udp = True)
+      parse nc flags ("-lu":rest) pos spec = parse nc flags rest pos (spec with nc_listen = True, nc_udp = True)
+      parse nc flags ("-ul":rest) pos spec = parse nc flags rest pos (spec with nc_listen = True, nc_udp = True)
       parse nc flags ("-U":rest) pos spec = parse nc flags rest pos (spec with nc_unix = True)
       parse nc flags ("-lU":rest) pos spec = parse nc flags rest pos (spec with nc_listen = True, nc_unix = True)
       parse nc flags ("-Ul":rest) pos spec = parse nc flags rest pos (spec with nc_listen = True, nc_unix = True)
@@ -3025,11 +3923,90 @@ fn :: finish nc transfer (Bool, String) => Int String
       finish nc transfer (True, out)    =  (0, out)
       finish nc transfer (False, err)   =  (1, "nc: " + err + (char from code 10))
 
+fn :: recv udp after poll Int Int => Int String
+      recv udp after poll ufd prc =
+        | prc <= 0 =
+          _ = posix close ufd
+          (1, "nc: udp timeout")
+        | otherwise =
+          dgram = sys read fd ufd 65536
+          _ = posix close ufd
+          (0, dgram)
+
+fn :: finish nc udp bind Int Int Int => Int String
+      finish nc udp bind ufd rc_b timeout_ms =
+        | rc_b < 0 =
+          _ = posix close ufd
+          (1, "nc: udp bind failed")
+        | otherwise =
+          prc = sys poll ufd 1 timeout_ms
+          recv udp after poll ufd prc
+
+fn :: execute nc udp listen NcSpec => Int String
+      execute nc udp listen spec   =
+        r_ip = sys resolve ipv4 (nc_host spec)
+        ip = select non empty (snd r_ip) "127.0.0.1"
+        ptr = sk alloc page 4096
+        mfd = sk alloc mfd
+        ufd = sys call 41 2 2 0 0 0 0
+        _ = sk poke mfd ptr (sk u64 le 1)
+        _ = sys call 54 ufd 1 2 ptr 4 0
+        _ = sys call 54 ufd 1 15 ptr 4 0
+        sin = sk build sockaddr in ip (nc_port spec) False
+        _ = sk poke mfd ptr sin
+        rc_b = sys call 49 ufd ptr 16 0 0 0
+        _ = sk free page mfd ptr 4096
+        finish nc udp bind ufd rc_b (nc_timeout_ms spec)
+
+fn :: recv udp client opt Int Int => String
+      recv udp client opt ufd prc =
+        | prc <= 0  = ""
+        | otherwise = sys read fd ufd 65536
+
+fn :: finish nc udp client Int Int Int => Int String
+      finish nc udp client ufd rc_c rc_s =
+        | (rc_c < 0) or (rc_s < 0) =
+          _ = posix close ufd
+          (1, "nc: udp send failed")
+        | otherwise =
+          rx = recv udp client opt ufd (sys poll ufd 1 20)
+          _ = posix close ufd
+          (0, rx)
+
+fn :: execute nc udp client ip String Int String => Int String
+      execute nc udp client ip ip port payload =
+        dlen = str len payload
+        psz = ((dlen / 4096) + 2) * 4096
+        ptr = sk alloc page psz
+        mfd = sk alloc mfd
+        ufd = sys call 41 2 2 0 0 0 0
+        sin = sk build sockaddr in ip port True
+        _ = sk poke mfd ptr sin
+        rc_c = sys call 42 ufd ptr 16 0 0 0
+        _ = sk poke mfd ptr payload
+        rc_s = sys call 44 ufd ptr dlen 16384 0 0
+        _ = sk free page mfd ptr psz
+        finish nc udp client ufd rc_c rc_s
+
+fn :: dispatch nc udp client (Int, String) Int String => Int String
+      dispatch nc udp client (0, ip) port payload = execute nc udp client ip ip port payload
+      dispatch nc udp client _ _ _ = (1, "nc: invalid host")
+
+fn :: execute nc udp client NcSpec String => Int String
+      execute nc udp client spec payload =
+        dispatch nc udp client (sys resolve ipv4 (nc_host spec)) (nc_port spec) payload
+
+fn :: execute nc udp NcSpec String  => Int String
+      execute nc udp spec   payload =
+        | not (is valid port (nc_port spec)) = (1, "nc: invalid port")
+        | nc_listen spec                     = execute nc udp listen spec
+        | otherwise                          = execute nc udp client spec payload
+
 op :: execute nc NcSpec with String  => Int String
       execute nc spec   with payload =
         | nc_unix spec                                              = execute nc unix spec (nc_unix_path spec) payload
         | (nc_nodns spec) and (not (is valid ipv4 (nc_host spec)))  = (1, "nc: nodns requires numeric IP address")
-        | nc_udp spec                                               = finish nc transfer (nc udp loopback transfer payload (nc_host spec) (nc_port spec))
+        | nc_udp spec                                               = execute nc udp spec payload
         | (nc_listen spec) and (not (is valid port (nc_port spec))) = (1, "nc: invalid port")
         | nc_listen spec                                            = finish nc listen (sys tcp listen reuseport (nc_host spec) (nc_port spec) 4) spec payload
         | (nc_zero spec) and ((not (is valid port (nc_port spec))) or (not (is valid port (nc_port_end spec)))) = (1, "nc: invalid port")

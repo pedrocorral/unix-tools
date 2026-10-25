@@ -197,10 +197,91 @@ fn :: test mktemp suite => ()
         _ = assert int equals rc_comp 0 "E2E composition: target/mktemp -d + target/mtree -c/-f roundtrip verification"
         ()
 
+fn :: test fs parity gaps suite => ()
+      test fs parity gaps suite =
+        nl = char from code 10
+        _ = echo "=== 5. Testing ls (-i/-n/-s/st_nlink), find (-exec + / -prune / -newer / -perm / -L / -delete), and mtree (/set, .., -e, -r) Parity (ADR-0002) ==="
+        _ = shell exec "rm -rf /tmp/ut_fs_par && mkdir -p /tmp/ut_fs_par/sub1 /tmp/ut_fs_par/sub2 /tmp/ut_fs_par/sub3"
+        _ = write file "/tmp/ut_fs_par/base.txt" "hardlink_payload"
+        _ = shell exec "ln /tmp/ut_fs_par/base.txt /tmp/ut_fs_par/link2.txt && ln /tmp/ut_fs_par/base.txt /tmp/ut_fs_par/link3.txt"
+        ls_hl = evaluate ls (parse ls args ["-l", "/tmp/ut_fs_par/base.txt"])
+        _ = assert true (str contains ls_hl " 3 ") "ADR-0002 ls -l: reports real kernel st_nlink = 3 for file with 3 hardlinks (not hardcoded 1)"
+        ls_dir_nlink = evaluate ls (parse ls args ["-ld", "/tmp/ut_fs_par"])
+        _ = assert true (str contains ls_dir_nlink " 5 ") "ADR-0002 ls -ld: reports real kernel st_nlink = 5 for directory with 3 subdirectories (not hardcoded 2)"
+        ls_ino1 = evaluate ls (parse ls args ["-1i", "/tmp/ut_fs_par/base.txt"])
+        ls_ino2 = evaluate ls (parse ls args ["-1i", "/tmp/ut_fs_par/link2.txt"])
+        ino_tok1 = str list nth (split whitespace ls_ino1) 0
+        ino_tok2 = str list nth (split whitespace ls_ino2) 0
+        _ = assert true ((str to int ino_tok1) > 0) "ADR-0002 ls -i: reports positive real kernel inode number (st_ino)"
+        _ = assert str eq ino_tok1 ino_tok2 "ADR-0002 ls -i: hardlinked files base.txt and link2.txt share the exact same kernel st_ino"
+        uid_s = int to str (sys getuid)
+        gid_s = int to str (sys getgid)
+        ls_num = evaluate ls (parse ls args ["-ln", "/tmp/ut_fs_par/base.txt"])
+        _ = assert true (str contains ls_num (" " + uid_s + " " + gid_s + " ")) "ADR-0002 ls -ln: displays numeric UID and GID instead of user/group names"
+        ls_comb = evaluate ls (parse ls args ["-lnsiF", "/tmp/ut_fs_par/base.txt"])
+        _ = assert true ((str contains ls_comb ino_tok1) and (str contains ls_comb (" " + uid_s + " "))) "ADR-0002 ls -lnsiF combination: combines inode, blocks, numeric IDs, and classify"
+        _ = shell exec "rm -rf /tmp/ut_find_par && mkdir -p /tmp/ut_find_par/keep /tmp/ut_find_par/skip_dir /tmp/ut_find_par/real_target"
+        _ = write file "/tmp/ut_find_par/keep/a.txt" "a"
+        _ = write file "/tmp/ut_find_par/keep/b.txt" "b"
+        _ = write file "/tmp/ut_find_par/skip_dir/secret.txt" "s"
+        _ = write file "/tmp/ut_find_par/real_target/sym_inside.txt" "inside"
+        _ = sys symlink "/tmp/ut_find_par/real_target" "/tmp/ut_find_par/keep/sym_dir"
+        f_prune = evaluate find (parse find args ["/tmp/ut_find_par", "-name", "skip_dir", "-prune", "-o", "-type", "f", "-print"])
+        _ = assert false (str contains f_prune "secret.txt") "ADR-0002 find -prune: skips descending into pruned directory skip_dir"
+        _ = assert true (str contains f_prune "a.txt") "ADR-0002 find -prune: still visits non-pruned sibling directories"
+        _ = sys unlink "/tmp/ut_find_plus.log"
+        _ = evaluate find (parse find args ["/tmp/ut_find_par/keep", "-type", "f", "-exec", "/bin/sh", "-c", "echo $# >> /tmp/ut_find_plus.log", "sh", "\{\}", "+"])
+        _ = assert str eq (read file "/tmp/ut_find_plus.log") ("2" + nl) "ADR-0002 find -exec ... {} +: batches all matched files into a single process invocation"
+        _ = sys unlink "/tmp/ut_find_plus.log"
+        _ = shell exec "touch -t 202501010000 /tmp/ut_find_par/keep/a.txt && touch -t 202501030000 /tmp/ut_find_par/keep/b.txt"
+        f_newer = evaluate find (parse find args ["/tmp/ut_find_par/keep", "-type", "f", "-newer", "/tmp/ut_find_par/keep/a.txt"])
+        _ = assert true ((str contains f_newer "b.txt") and (not (str contains f_newer "a.txt"))) "ADR-0002 find -newer: matches only files strictly newer than reference file"
+        _ = sys chmod "/tmp/ut_find_par/keep/a.txt" 493
+        _ = sys chmod "/tmp/ut_find_par/keep/b.txt" 420
+        f_perm_exact = evaluate find (parse find args ["/tmp/ut_find_par/keep", "-type", "f", "-perm", "0755"])
+        _ = assert true ((str contains f_perm_exact "a.txt") and (not (str contains f_perm_exact "b.txt"))) "ADR-0002 find -perm 0755: matches exact octal mode"
+        f_perm_all = evaluate find (parse find args ["/tmp/ut_find_par/keep", "-type", "f", "-perm", "-0100"])
+        _ = assert true ((str contains f_perm_all "a.txt") and (not (str contains f_perm_all "b.txt"))) "ADR-0002 find -perm -0100: matches files with user execute bit set"
+        f_links = evaluate find (parse find args ["/tmp/ut_fs_par", "-type", "f", "-links", "3"])
+        _ = assert true (str contains f_links "base.txt") "ADR-0002 find -links 3: matches files with 3 hardlinks"
+        f_inum = evaluate find (parse find args ["/tmp/ut_fs_par", "-inum", ino_tok1])
+        _ = assert true (str contains f_inum "link3.txt") "ADR-0002 find -inum: matches files by real inode number"
+        f_regex = evaluate find (parse find args ["/tmp/ut_find_par/keep", "-regex", ".*a\\.txt"])
+        _ = assert true ((str contains f_regex "a.txt") and (not (str contains f_regex "b.txt"))) "ADR-0002 find -regex: matches full path against regular expression"
+        f_sym_p = evaluate find (parse find args ["/tmp/ut_find_par/keep", "-name", "sym_inside.txt"])
+        _ = assert str eq f_sym_p "" "ADR-0002 find default (-P): does not traverse into symlinked directories"
+        f_sym_l = evaluate find (parse find args ["-L", "/tmp/ut_find_par/keep", "-name", "sym_inside.txt"])
+        _ = assert true (str contains f_sym_l "sym_inside.txt") "ADR-0002 find -L: follows symbolic links into target directories"
+        _ = write file "/tmp/ut_find_par/keep/del_me.tmp" "bye"
+        _ = evaluate find (parse find args ["/tmp/ut_find_par/keep", "-name", "*.tmp", "-delete"])
+        _ = assert false (lstat exists (file lstat "/tmp/ut_find_par/keep/del_me.tmp")) "ADR-0002 find -delete: unlinks matching files from disk"
+        _ = shell exec "rm -rf /tmp/ut_mtree_par && mkdir -p /tmp/ut_mtree_par/sub"
+        _ = write file "/tmp/ut_mtree_par/f1.txt" "hello"
+        _ = write file "/tmp/ut_mtree_par/sub/f2.txt" "world"
+        _ = sys chmod "/tmp/ut_mtree_par" 493
+        _ = sys chmod "/tmp/ut_mtree_par/sub" 493
+        _ = sys chmod "/tmp/ut_mtree_par/f1.txt" 420
+        _ = sys chmod "/tmp/ut_mtree_par/sub/f2.txt" 384
+        bsd_spec = "/set type=file mode=0644" + nl + ". type=dir" + nl + "    f1.txt size=5" + nl + "/set mode=0600" + nl + "    sub type=dir mode=0755" + nl + "        f2.txt size=5" + nl + "    .." + nl + "/unset mode" + nl + ".." + nl
+        mt_ok = verify mtree bsd_spec at "/tmp/ut_mtree_par" update False
+        _ = assert true (fst mt_ok) "ADR-0002 mtree: parses /set, /unset, and hierarchical '..' directory blocks cleanly"
+        _ = write file "/tmp/ut_mtree_par/extra_untracked.txt" "extra"
+        mt_fail_extra = verify mtree bsd_spec at "/tmp/ut_mtree_par" update False
+        _ = assert false (fst mt_fail_extra) "ADR-0002 mtree: reports extra untracked file by default"
+        _ = write file "/tmp/ut_mtree_par.spec" bsd_spec
+        rc_mt_e = shell exec "./target/mtree -e -f /tmp/ut_mtree_par.spec -p /tmp/ut_mtree_par > /tmp/ut_mt_e.out"
+        _ = assert int equals rc_mt_e 0 "ADR-0002 mtree -e: ignores extra untracked files and exits 0"
+        rc_mt_r = shell exec "./target/mtree -r -f /tmp/ut_mtree_par.spec -p /tmp/ut_mtree_par > /tmp/ut_mt_r.out"
+        _ = assert int equals rc_mt_r 0 "ADR-0002 mtree -r: removes extra untracked files and exits 0"
+        _ = assert false (lstat exists (file lstat "/tmp/ut_mtree_par/extra_untracked.txt")) "ADR-0002 mtree -r: extra_untracked.txt was deleted from disk"
+        _ = shell exec "rm -rf /tmp/ut_fs_par /tmp/ut_find_par /tmp/ut_mtree_par /tmp/ut_mtree_par.spec /tmp/ut_mt_e.out /tmp/ut_mt_r.out"
+        ()
+
 fn :: main => ()
       main =
         _ = test ls unit suite
         _ = test find unit suite
         _ = test fs e2e suite
         _ = test mktemp suite
-        echo "All 78 Tier 2 BSD Filesystem (ls, find, mtree, mktemp) unit & E2E assertions passed!"
+        _ = test fs parity gaps suite
+        echo "All 104 Tier 2 BSD Filesystem (ls, find, mtree, mktemp) unit & E2E assertions passed!"

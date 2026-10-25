@@ -14,17 +14,17 @@ type FileKind = FReg | FDir | FSymLink | FFifo | FSock | FBlock | FChar
 
 type FileEntry = Entry String String FileKind Int Int Int String String Int String
 
-type LsSpec = l_one_per_line: Bool, l_multi_col: Bool, l_across: Bool, l_comma: Bool, l_long: Bool, l_dir_self: Bool, l_all: Bool, l_almost_all: Bool, l_unsorted: Bool, l_classify: Bool, l_slash_dir: Bool, l_nonprint_q: Bool, l_human: Bool, l_sort_size: Bool, l_sort_time: Bool, l_reverse: Bool, l_recursive: Bool, l_color: Bool, l_paths: [String]
+type LsSpec = l_one_per_line: Bool, l_multi_col: Bool, l_across: Bool, l_comma: Bool, l_long: Bool, l_dir_self: Bool, l_all: Bool, l_almost_all: Bool, l_unsorted: Bool, l_classify: Bool, l_slash_dir: Bool, l_nonprint_q: Bool, l_human: Bool, l_sort_size: Bool, l_sort_time: Bool, l_reverse: Bool, l_recursive: Bool, l_color: Bool, l_inode: Bool, l_numeric: Bool, l_blocks: Bool, l_paths: [String]
 
 type FindExpr = ETrue | EName String | EIname String | EPath String | EType String | ESize Int Int | EMaxDepth Int | EMinDepth Int
 
-expand type FindExpr = EEmpty | ENot FindExpr | EAnd FindExpr FindExpr | EOr FindExpr FindExpr
+expand type FindExpr = EEmpty | EPrune | EPrint | ENewer Int Int | EPerm Int Int | ELinks Int Int | EInum Int | ERegex String | ENot FindExpr | EAnd FindExpr FindExpr | EOr FindExpr FindExpr
 
-type FindSpec = f_paths: [String], f_expr: FindExpr, f_max_depth: Int, f_min_depth: Int, f_print0: Bool, f_exec_cmd: [String]
+type FindSpec = f_paths: [String], f_expr: FindExpr, f_max_depth: Int, f_min_depth: Int, f_print0: Bool, f_exec_cmd: [String], f_exec_plus: Bool, f_follow: Bool, f_delete: Bool, f_has_print: Bool
 
 type MtreeEntry = me_rel: String, me_type: String, me_mode: Int, me_size: Int, me_sha256: String, me_link: String
 
-type MtreeSpec = m_create: Bool, m_spec_file: String, m_path: String, m_update: Bool, m_keywords: [String]
+type MtreeSpec = m_create: Bool, m_spec_file: String, m_path: String, m_update: Bool, m_ignore_extra: Bool, m_remove_extra: Bool, m_keywords: [String]
 
 type MktempSpec = mkt_dir: Bool, mkt_unsafe: Bool, mkt_quiet: Bool, mkt_tmpdir: String, mkt_prefix: String, mkt_template: String
 
@@ -240,9 +240,71 @@ fn :: is link kind FileKind => Bool
       is link kind FSymLink =  True
       is link kind other    =  False
 
+fn :: select stat syscall Bool  => Int
+      select stat syscall True  =  4
+      select stat syscall False =  6
+
+fn :: raw kernel stat String Bool   => Bool Int Int Int Int Int Int Int Int Int
+      raw kernel stat path   follow =
+        | (str len path) == 0 = (False, 0, 1, 0, 0, 0, 0, 0, 0, 0)
+        | otherwise =
+          ptr = px alloc page 4096
+          mfd = px alloc mfd
+          _ = px poke mfd ptr (path + (px raw byte 0))
+          sys_nr = select stat syscall follow
+          rc = sys call sys_nr ptr (ptr + 2048) 0 0 0 0
+          raw = px peek mfd (ptr + 2048) 144
+          _ = px free page mfd ptr 4096
+          decode raw stat rc raw
+
+fn :: decode raw stat Int String => Bool Int Int Int Int Int Int Int Int Int
+      decode raw stat rc  raw    =
+        | (rc != 0) or ((str len raw) < 112) = (False, 0, 1, 0, 0, 0, 0, 0, 0, 0)
+        | otherwise =
+          ino = px decode u64 le raw 8
+          nlink = max int 1 (px decode u64 le raw 16)
+          mode = px decode u32 le raw 24
+          uid = px decode u32 le raw 28
+          gid = px decode u32 le raw 32
+          sz = px decode u64 le raw 48
+          blks = px decode u64 le raw 64
+          mt_sec = px decode u64 le raw 88
+          mt_nsec = px decode u64 le raw 96
+          (True, ino, nlink, mode, uid, gid, sz, blks, mt_sec, mt_nsec)
+
+fn :: kstat ok (Bool, Int, Int, Int, Int, Int, Int, Int, Int, Int) => Bool
+      kstat ok (ok, _, _, _, _, _, _, _, _, _)                     =  ok
+
+fn :: kstat ino (Bool, Int, Int, Int, Int, Int, Int, Int, Int, Int) => Int
+      kstat ino (_, ino, _, _, _, _, _, _, _, _)                    =  ino
+
+fn :: kstat nlink (Bool, Int, Int, Int, Int, Int, Int, Int, Int, Int) => Int
+      kstat nlink (_, _, nl, _, _, _, _, _, _, _)                     =  nl
+
+fn :: kstat uid (Bool, Int, Int, Int, Int, Int, Int, Int, Int, Int) => Int
+      kstat uid (_, _, _, _, uid, _, _, _, _, _)                    =  uid
+
+fn :: kstat gid (Bool, Int, Int, Int, Int, Int, Int, Int, Int, Int) => Int
+      kstat gid (_, _, _, _, _, gid, _, _, _, _)                    =  gid
+
+fn :: kstat blocks (Bool, Int, Int, Int, Int, Int, Int, Int, Int, Int) => Int
+      kstat blocks (_, _, _, _, _, _, _, blks, _, _)                   =  blks
+
+fn :: kstat mtime sec (Bool, Int, Int, Int, Int, Int, Int, Int, Int, Int) => Int
+      kstat mtime sec (_, _, _, _, _, _, _, _, ms, _)                     =  ms
+
+fn :: kstat mtime nsec (Bool, Int, Int, Int, Int, Int, Int, Int, Int, Int) => Int
+      kstat mtime nsec (_, _, _, _, _, _, _, _, _, mn) = mn
+
 fn :: stat to entry String String (Bool, String, Int, Int, Int, String, String, Int, String) => FileEntry
       stat to entry name full_path (ok, kstr, mode, nlink, size, owner, group, mtime, link_target) =
-        Entry name full_path (parse file kind kstr) mode nlink size owner group mtime link_target
+        ks = raw kernel stat full_path False
+        real_nl = select real nlink (kstat ok ks) (kstat nlink ks) nlink
+        Entry name full_path (parse file kind kstr) mode real_nl size owner group mtime link_target
+
+fn :: select real nlink Bool Int Int => Int
+      select real nlink True knl _ = knl
+      select real nlink False _ fnl = fnl
 
 fn :: lstat ok (Bool, String, Int, Int, Int, String, String, Int, String) => Bool
       lstat ok (ok, kstr, mode, nlink, size, owner, group, mtime, link_target) = ok
@@ -257,7 +319,7 @@ op :: stat file entry String    named String => FileEntry
 -- ============================================================================
 
 fn :: default ls spec => LsSpec
-      default ls spec =  LsSpec False True False False False False False False False False False False False False False False False False []
+      default ls spec =  LsSpec False True False False False False False False False False False False False False False False False False False False False []
 
 op :: parse ls args [String] => LsSpec
       parse ls args args     =  parse ls loop args (default ls spec) False
@@ -269,6 +331,9 @@ fn :: apply ls flag Int LsSpec => LsSpec
         | c == 120 = spec with l_one_per_line = False, l_multi_col = False, l_across = True, l_comma = False, l_long = False
         | c == 109 = spec with l_one_per_line = False, l_multi_col = False, l_across = False, l_comma = True, l_long = False
         | c == 108 = spec with l_one_per_line = False, l_multi_col = False, l_across = False, l_comma = False, l_long = True
+        | c == 110 = spec with l_one_per_line = False, l_multi_col = False, l_across = False, l_comma = False, l_long = True, l_numeric = True
+        | c == 105 = spec with l_inode = True
+        | c == 115 = spec with l_blocks = True
         | c == 100 = spec with l_dir_self = True
         | c == 97 = spec with l_all = True
         | c == 65 = spec with l_almost_all = True
@@ -532,31 +597,65 @@ fn :: pad2 zero Int => String
         | n < 10 = "0" + (int to str n)
         | otherwise = int to str n
 
+fn :: resolve entry prefix FileEntry LsSpec => String
+      resolve entry prefix entry     spec   =
+        | (not (l_inode spec)) and (not (l_blocks spec)) = ""
+        | otherwise =
+          ks = raw kernel stat (fe path entry) False
+          ino_part = format opt inode (l_inode spec) (kstat ino ks)
+          blk_part = format opt blocks (l_blocks spec) (kstat blocks ks)
+          ino_part + blk_part
+
+fn :: format opt inode Bool  Int => String
+      format opt inode False _   =  ""
+      format opt inode True  ino =  (int to str ino) + " "
+
+fn :: format opt blocks Bool  Int  => String
+      format opt blocks False _    =  ""
+      format opt blocks True  blks =  (int to str blks) + " "
+
+fn :: resolve owner str FileEntry Bool  => String
+      resolve owner str entry     False =  fe owner entry
+      resolve owner str entry     True  =
+        ks = raw kernel stat (fe path entry) False
+        select uid str (kstat ok ks) (kstat uid ks) (fe owner entry)
+
+fn :: select uid str Bool Int String => String
+      select uid str True uid _ = int to str uid
+      select uid str False _ fallback = fallback
+
+fn :: resolve group str FileEntry Bool  => String
+      resolve group str entry     False =  fe group entry
+      resolve group str entry     True  =
+        ks = raw kernel stat (fe path entry) False
+        select uid str (kstat ok ks) (kstat gid ks) (fe group entry)
+
 fn :: format long entry FileEntry LsSpec Int Int Int Int => String
       format long entry entry spec w_nlink w_owner w_group w_size =
+        pfx = resolve entry prefix entry spec
         m_str = format mode string (fe kind entry) (fe mode entry)
         nl_str = pad left (int to str (fe nlink entry)) w_nlink
-        ow_str = pad right (fe owner entry) w_owner
-        gr_str = pad right (fe group entry) w_group
+        ow_str = pad right (resolve owner str entry (l_numeric spec)) w_owner
+        gr_str = pad right (resolve group str entry (l_numeric spec)) w_group
         sz_str = pad left (format size field (fe size entry) (l_human spec)) w_size
         dt_str = format mtime short (fe mtime entry)
         disp_name = format entry display name entry spec
         link_suffix = format symlink target entry
-        m_str + " " + nl_str + " " + ow_str + " " + gr_str + " " + sz_str + " " + dt_str + " " + disp_name + link_suffix
+        pfx + m_str + " " + nl_str + " " + ow_str + " " + gr_str + " " + sz_str + " " + dt_str + " " + disp_name + link_suffix
 
 fn :: format symlink target FileEntry => String
       format symlink target entry     =
         | (is link kind (fe kind entry)) and ((str len (fe link target entry)) > 0) = " -> " + (fe link target entry)
         | otherwise = ""
 
-fn :: max entry widths [FileEntry] Bool Int Int Int Int => Int Int Int Int
-      max entry widths [] human wn wo wg ws = (wn, wo, wg, ws)
-      max entry widths (e:rest) human wn wo wg ws =
+fn :: max entry widths [FileEntry] LsSpec Int Int Int Int => Int Int Int Int
+      max entry widths [] spec wn wo wg ws = (wn, wo, wg, ws)
+      max entry widths (e:rest) spec wn wo wg ws =
         n_len = str len (int to str (fe nlink e))
-        o_len = str len (fe owner e)
-        g_len = str len (fe group e)
-        s_len = str len (format size field (fe size e) human)
-        max entry widths rest human (max int wn n_len) (max int wo o_len) (max int wg g_len) (max int ws s_len)
+        o_len = str len (resolve owner str e (l_numeric spec))
+        g_len = str len (resolve group str e (l_numeric spec))
+        s_len = str len (format size field (fe size e) (l_human spec))
+        max entry widths rest spec (max int wn n_len) (max int wo o_len) (max int wg g_len) (max int ws s_len)
 
 fn :: render long entries [FileEntry] LsSpec (Int, Int, Int, Int) [String] => [String]
       render long entries [] spec widths acc = acc
@@ -567,7 +666,8 @@ fn :: render long entries [FileEntry] LsSpec (Int, Int, Int, Int) [String] => [S
 fn :: render one per line [FileEntry] LsSpec [String] => [String]
       render one per line [] spec acc = acc
       render one per line (e:rest) spec acc =
-        render one per line rest spec (acc :: [format entry display name e spec])
+        pfx = resolve entry prefix e spec
+        render one per line rest spec (acc :: [pfx + (format entry display name e spec)])
 
 fn :: visible entry len FileEntry LsSpec => Int
       visible entry len entry     spec   =
@@ -653,7 +753,7 @@ fn :: pad mc cell String Int Int Bool => String
 
 op :: format ls entries [FileEntry] with LsSpec => [String]
       format ls entries entries     with spec   =
-        | l_long spec         = render long entries entries spec (max entry widths entries (l_human spec) 1 1 1 1) []
+        | l_long spec         = render long entries entries spec (max entry widths entries spec 1 1 1 1) []
         | l_one_per_line spec = render one per line entries spec []
         | l_comma spec        = render comma stream entries spec
         | l_across spec       = render across col entries spec
@@ -709,13 +809,16 @@ fn :: append ls section [String] [String] => [String]
       append ls section acc      []       =  acc
       append ls section acc      part     =  acc :: [""] :: part
 
-op :: run ls [String] => String
-      run ls args     =
-        spec = parse ls args args
+op :: evaluate ls LsSpec => String
+      evaluate ls spec   =
         paths = l_paths spec
         multi = (list len paths) > 1
         lines = run ls paths paths spec multi []
         finalize output lines lines
+
+op :: run ls [String] => String
+      run ls args     =
+        evaluate ls (parse ls args args)
 
 fn :: finalize output lines [String] => String
       finalize output lines []       =  ""
@@ -779,6 +882,13 @@ fn :: check bracket result String Int Int String Int Int Bool Bool => Bool
         | neg and (not matched) = glob loop pat end_pi plen txt (ti + 1) tlen
         | otherwise = False
 
+fn :: extract lead follow [String] Bool   => Bool [String]
+      extract lead follow []       follow =  (follow, [])
+      extract lead follow (x:xs)   follow =
+        | x == "-L" = extract lead follow xs True
+        | (x == "-P") or (x == "-H") = extract lead follow xs False
+        | otherwise = (follow, [x] :: xs)
+
 fn :: is find token String => Bool
       is find token s      =
         | (s == "(") or (s == ")") or (s == "!") = True
@@ -804,6 +914,20 @@ fn :: parse size arg String => Int Int
         | (str char at s 0) == 45 = (0 - 1, parse size bytes (str slice s 1 (str len s)))
         | otherwise = (0, parse size bytes s)
 
+fn :: parse links arg String => Int Int
+      parse links arg s      =
+        | (str len s) == 0 = (0, 0)
+        | (str char at s 0) == 43 = (1, str to int (str slice s 1 (str len s)))
+        | (str char at s 0) == 45 = (0 - 1, str to int (str slice s 1 (str len s)))
+        | otherwise = (0, str to int s)
+
+fn :: parse perm arg String => Int Int
+      parse perm arg s      =
+        | (str len s) == 0 = (0, 0)
+        | (str char at s 0) == 45 = (1, octal str to int (str slice s 1 (str len s)))
+        | ((str char at s 0) == 47) or ((str char at s 0) == 43) = (2, octal str to int (str slice s 1 (str len s)))
+        | otherwise = (0, octal str to int s)
+
 fn :: parse size bytes String => Int
       parse size bytes s      =
         len = str len s
@@ -823,31 +947,33 @@ fn :: parse size with unit String Int Int => Int
         | last_ch == 71 = (str to int (str slice s 0 (len - 1))) * 1073741824
         | otherwise = (str to int s) * 512
 
-fn :: extract find options [String] Int Int Bool [String] [String] => Int Int Bool [String] [String]
-      extract find options [] max_d min_d p0 exec_c rem = (max_d, min_d, p0, exec_c, rem)
-      extract find options (t:rest) max_d min_d p0 exec_c rem =
-        | t == "-maxdepth" = extract maxdepth rest max_d min_d p0 exec_c rem
-        | t == "-mindepth" = extract mindepth rest max_d min_d p0 exec_c rem
-        | t == "-print" = extract find options rest max_d min_d p0 exec_c rem
-        | t == "-print0" = extract find options rest max_d min_d True exec_c rem
-        | t == "-exec" = extract exec tokens rest max_d min_d p0 [] rem
-        | otherwise = extract find options rest max_d min_d p0 exec_c (rem :: [t])
+fn :: extract find options [String] Int Int Bool [String] Bool Bool Bool [String] => Int Int Bool [String] Bool Bool Bool [String]
+      extract find options [] max_d min_d p0 exec_c exec_pl del has_pr rem = (max_d, min_d, p0, exec_c, exec_pl, del, has_pr, rem)
+      extract find options (t:rest) max_d min_d p0 exec_c exec_pl del has_pr rem =
+        | t == "-maxdepth" = extract maxdepth rest max_d min_d p0 exec_c exec_pl del has_pr rem
+        | t == "-mindepth" = extract mindepth rest max_d min_d p0 exec_c exec_pl del has_pr rem
+        | t == "-print" = extract find options rest max_d min_d p0 exec_c exec_pl del True (rem :: ["-print"])
+        | t == "-print0" = extract find options rest max_d min_d True exec_c exec_pl del has_pr rem
+        | t == "-delete" = extract find options rest max_d min_d p0 exec_c exec_pl True has_pr rem
+        | t == "-exec" = extract exec tokens rest max_d min_d p0 [] exec_pl del has_pr rem
+        | otherwise = extract find options rest max_d min_d p0 exec_c exec_pl del has_pr (rem :: [t])
 
-fn :: extract maxdepth [String] Int Int Bool [String] [String] => Int Int Bool [String] [String]
-      extract maxdepth [] max_d min_d p0 exec_c rem = (max_d, min_d, p0, exec_c, rem)
-      extract maxdepth (v:rest) max_d min_d p0 exec_c rem =
-        extract find options rest (str to int v) min_d p0 exec_c rem
+fn :: extract maxdepth [String] Int Int Bool [String] Bool Bool Bool [String] => Int Int Bool [String] Bool Bool Bool [String]
+      extract maxdepth [] max_d min_d p0 exec_c exec_pl del has_pr rem = (max_d, min_d, p0, exec_c, exec_pl, del, has_pr, rem)
+      extract maxdepth (v:rest) max_d min_d p0 exec_c exec_pl del has_pr rem =
+        extract find options rest (str to int v) min_d p0 exec_c exec_pl del has_pr rem
 
-fn :: extract mindepth [String] Int Int Bool [String] [String] => Int Int Bool [String] [String]
-      extract mindepth [] max_d min_d p0 exec_c rem = (max_d, min_d, p0, exec_c, rem)
-      extract mindepth (v:rest) max_d min_d p0 exec_c rem =
-        extract find options rest max_d (str to int v) p0 exec_c rem
+fn :: extract mindepth [String] Int Int Bool [String] Bool Bool Bool [String] => Int Int Bool [String] Bool Bool Bool [String]
+      extract mindepth [] max_d min_d p0 exec_c exec_pl del has_pr rem = (max_d, min_d, p0, exec_c, exec_pl, del, has_pr, rem)
+      extract mindepth (v:rest) max_d min_d p0 exec_c exec_pl del has_pr rem =
+        extract find options rest max_d (str to int v) p0 exec_c exec_pl del has_pr rem
 
-fn :: extract exec tokens [String] Int Int Bool [String] [String] => Int Int Bool [String] [String]
-      extract exec tokens [] max_d min_d p0 acc rem = (max_d, min_d, p0, acc, rem)
-      extract exec tokens (t:rest) max_d min_d p0 acc rem =
-        | t == ";" = extract find options rest max_d min_d p0 acc rem
-        | otherwise = extract exec tokens rest max_d min_d p0 (acc :: [t]) rem
+fn :: extract exec tokens [String] Int Int Bool [String] Bool Bool Bool [String] => Int Int Bool [String] Bool Bool Bool [String]
+      extract exec tokens [] max_d min_d p0 acc exec_pl del has_pr rem = (max_d, min_d, p0, acc, exec_pl, del, has_pr, rem)
+      extract exec tokens (t:rest) max_d min_d p0 acc exec_pl del has_pr rem =
+        | t == ";" = extract find options rest max_d min_d p0 acc False del has_pr rem
+        | (t == "+") and ((list len acc) > 0) and ((str list nth acc ((list len acc) - 1)) == "\{\}") = extract find options rest max_d min_d p0 acc True del has_pr rem
+        | otherwise = extract exec tokens rest max_d min_d p0 (acc :: [t]) exec_pl del has_pr rem
 
 fn :: parse find expr [String] => FindExpr
       parse find expr []       =  ETrue
@@ -892,7 +1018,14 @@ fn :: parse unary expr [String] => FindExpr [String]
         | t == "-path" = parse arg primary 3 rest
         | t == "-type" = parse arg primary 4 rest
         | t == "-size" = parse arg primary 5 rest
+        | t == "-newer" = parse arg primary 6 rest
+        | t == "-perm" = parse arg primary 7 rest
+        | t == "-links" = parse arg primary 8 rest
+        | t == "-inum" = parse arg primary 9 rest
+        | t == "-regex" = parse arg primary 10 rest
         | t == "-empty" = (EEmpty, rest)
+        | t == "-prune" = (EPrune, rest)
+        | t == "-print" = (EPrint, rest)
         | otherwise = (ETrue, rest)
 
 fn :: wrap not branch (FindExpr, [String]) => FindExpr [String]
@@ -917,22 +1050,41 @@ fn :: parse arg primary Int  [String]   => FindExpr [String]
         | kind == 3 = (EPath arg, rest)
         | kind == 4 = (EType arg, rest)
         | kind == 5 = build size expr (parse size arg arg) rest
+        | kind == 6 = build newer expr arg rest
+        | kind == 7 = build perm expr (parse perm arg arg) rest
+        | kind == 8 = build links expr (parse links arg arg) rest
+        | kind == 9 = (EInum (str to int arg), rest)
+        | kind == 10 = (ERegex arg, rest)
         | otherwise = (ETrue, rest)
 
 fn :: build size expr (Int, Int)    [String] => FindExpr [String]
       build size expr (cmp, target) rest     =  (ESize cmp target, rest)
 
+fn :: build newer expr String   [String] => FindExpr [String]
+      build newer expr ref_path rest     =
+        ks = raw kernel stat ref_path True
+        (ENewer (kstat mtime sec ks) (kstat mtime nsec ks), rest)
+
+fn :: build perm expr (Int, Int)  [String] => FindExpr [String]
+      build perm expr (pk, pmask) rest     =  (EPerm pk pmask, rest)
+
+fn :: build links expr (Int, Int)    [String] => FindExpr [String]
+      build links expr (cmp, target) rest     =  (ELinks cmp target, rest)
+
 op :: parse find args [String] => FindSpec
       parse find args args     =
-        split_res = split find paths args []
+        lead_res = extract lead follow args False
+        follow = fst lead_res
+        rem_args = snd lead_res
+        split_res = split find paths rem_args []
         paths = fst split_res
         raw_toks = snd split_res
-        opt_res = extract find options raw_toks (0 - 1) 0 False [] []
-        build find spec paths opt_res
+        opt_res = extract find options raw_toks (0 - 1) 0 False [] False False False []
+        build find spec paths follow opt_res
 
-fn :: build find spec [String] (Int, Int, Bool, [String], [String]) => FindSpec
-      build find spec paths    (max_d, min_d, p0, exec_c, expr_toks) =
-        FindSpec paths (parse find expr expr_toks) max_d min_d p0 exec_c
+fn :: build find spec [String] Bool (Int, Int, Bool, [String], Bool, Bool, Bool, [String]) => FindSpec
+      build find spec paths follow (max_d, min_d, p0, exec_c, exec_pl, del, has_pr, expr_toks) =
+        FindSpec paths (parse find expr expr_toks) max_d min_d p0 exec_c exec_pl follow del has_pr
 
 fn :: match find type FileKind String => Bool
       match find type FReg     "f"    =  True
@@ -950,33 +1102,175 @@ fn :: match find size Int Int Int => Bool
         | cmp < 0 = actual < target
         | otherwise = actual == target
 
+fn :: match find perm Int Int Int => Bool
+      match find perm actual 0 mask = (actual % 4096) == mask
+      match find perm actual 1 mask = ((actual % 4096) and mask) == mask
+      match find perm actual _ mask = ((actual % 4096) and mask) != 0
+
+fn :: match find newer FileEntry Int Int => Bool
+      match find newer entry ref_sec ref_nsec =
+        ks = raw kernel stat (fe path entry) False
+        esec = select newer sec (kstat ok ks) (kstat mtime sec ks) (fe mtime entry)
+        ensec = kstat mtime nsec ks
+        (esec > ref_sec) or ((esec == ref_sec) and (ensec > ref_nsec))
+
+fn :: select newer sec Bool Int Int => Int
+      select newer sec True s _ = s
+      select newer sec False _ fb = fb
+
+fn :: match find inum FileEntry Int        => Bool
+      match find inum entry     target_ino =
+        ks = raw kernel stat (fe path entry) False
+        (kstat ino ks) == target_ino
+
+fn :: regex match String against String => Bool
+      regex match pat    against txt    =
+        clean_p = strip regex anchors pat
+        regex loop clean_p 0 (str len clean_p) txt 0 (str len txt)
+
+fn :: strip regex anchors String => String
+      strip regex anchors p      =
+        p1 = strip lead caret p
+        strip trail dollar p1
+
+fn :: strip lead caret String => String
+      strip lead caret p      =
+        | ((str len p) > 0) and ((str char at p 0) == 94) = str slice p 1 (str len p)
+        | otherwise = p
+
+fn :: strip trail dollar String => String
+      strip trail dollar p      =
+        | ((str len p) > 0) and ((str char at p ((str len p) - 1)) == 36) = str slice p 0 ((str len p) - 1)
+        | otherwise = p
+
+fn :: regex atom len String Int Int => Int
+      regex atom len pat pi plen =
+        | pi >= plen = 0
+        | ((str char at pat pi) == 92) and ((pi + 1) < plen) = 2
+        | otherwise = 1
+
+fn :: regex char match String Int Int Int => Bool
+      regex char match pat pi plen tc =
+        | (str char at pat pi) == 46 = True
+        | ((str char at pat pi) == 92) and ((pi + 1) < plen) = (str char at pat (pi + 1)) == tc
+        | otherwise = (str char at pat pi) == tc
+
+fn :: regex loop String Int Int String Int Int => Bool
+      regex loop pat pi plen txt ti tlen =
+        | (pi >= plen) and (ti >= tlen) = True
+        | pi >= plen = False
+        | otherwise =
+          alen = regex atom len pat pi plen
+          q_idx = pi + alen
+          has_star = (q_idx < plen) and ((str char at pat q_idx) == 42)
+          has_plus = (q_idx < plen) and ((str char at pat q_idx) == 43)
+          has_qmark = (q_idx < plen) and ((str char at pat q_idx) == 63)
+          regex step quant pat pi plen txt ti tlen alen has_star has_plus has_qmark
+
+fn :: regex step quant String Int Int String Int Int Int Bool Bool Bool => Bool
+      regex step quant pat pi plen txt ti tlen alen True _ _ =
+        regex star pat pi (pi + alen + 1) plen txt ti tlen
+      regex step quant pat pi plen txt ti tlen alen False True _ =
+        | (ti < tlen) and (regex char match pat pi plen (str char at txt ti)) = regex star pat pi (pi + alen + 1) plen txt (ti + 1) tlen
+        | otherwise = False
+      regex step quant pat pi plen txt ti tlen alen False False True =
+        | regex loop pat (pi + alen + 1) plen txt ti tlen = True
+        | (ti < tlen) and (regex char match pat pi plen (str char at txt ti)) = regex loop pat (pi + alen + 1) plen txt (ti + 1) tlen
+        | otherwise = False
+      regex step quant pat pi plen txt ti tlen alen False False False =
+        | (ti < tlen) and (regex char match pat pi plen (str char at txt ti)) = regex loop pat (pi + alen) plen txt (ti + 1) tlen
+        | otherwise = False
+
+fn :: regex star String Int Int Int String Int Int => Bool
+      regex star pat atom_pi next_pi plen txt ti tlen =
+        | regex loop pat next_pi plen txt ti tlen = True
+        | (ti < tlen) and (regex char match pat atom_pi plen (str char at txt ti)) = regex star pat atom_pi next_pi plen txt (ti + 1) tlen
+        | otherwise = False
+
 fn :: match find empty FileEntry => Bool
       match find empty entry     =
         | is reg kind (fe kind entry) = (fe size entry) == 0
         | is dir kind (fe kind entry) = (list len (list dir (fe path entry))) == 0
         | otherwise = False
 
-op :: evaluate find expr FindExpr           on FileEntry at Int   => Bool
-      evaluate find expr ETrue              on entry     at depth =  True
-      evaluate find expr (EName pat)        on entry     at depth =  glob match pat against (fe name entry)
-      evaluate find expr (EIname pat)       on entry     at depth =  glob match (to lower str pat) against (to lower str (fe name entry))
-      evaluate find expr (EPath pat)        on entry     at depth =  glob match pat against (fe path entry)
-      evaluate find expr (EType t)          on entry     at depth =  match find type (fe kind entry) t
-      evaluate find expr (ESize cmp target) on entry     at depth =  match find size (fe size entry) cmp target
-      evaluate find expr (EMaxDepth d)      on entry     at depth =  depth <= d
-      evaluate find expr (EMinDepth d)      on entry     at depth =  depth >= d
-      evaluate find expr EEmpty             on entry     at depth =  match find empty entry
-      evaluate find expr (ENot sub)         on entry     at depth =
-        ok = evaluate find expr sub on entry at depth
-        not ok
-      evaluate find expr (EAnd a b)         on entry     at depth =
-        l = evaluate find expr a on entry at depth
-        r = evaluate find expr b on entry at depth
-        l and r
-      evaluate find expr (EOr a b)          on entry     at depth =
-        l = evaluate find expr a on entry at depth
-        r = evaluate find expr b on entry at depth
-        l or r
+fn :: tuple3 c1 (A, B, C) => A
+      tuple3 c1 (a, _, _) =  a
+
+fn :: tuple3 c2 (A, B, C) => B
+      tuple3 c2 (_, b, _) =  b
+
+fn :: tuple3 c3 (A, B, C) => C
+      tuple3 c3 (_, _, c) =  c
+
+fn :: evaluate find full FindExpr FileEntry Int => Bool Bool Bool
+      evaluate find full ETrue entry depth = (True, False, False)
+      evaluate find full EPrune entry depth = (True, True, False)
+      evaluate find full EPrint entry depth = (True, False, True)
+      evaluate find full (EName pat) entry depth = (glob match pat against (fe name entry), False, False)
+      evaluate find full (EIname pat) entry depth = (glob match (to lower str pat) against (to lower str (fe name entry)), False, False)
+      evaluate find full (EPath pat) entry depth = (glob match pat against (fe path entry), False, False)
+      evaluate find full (EType t) entry depth = (match find type (fe kind entry) t, False, False)
+      evaluate find full (ESize cmp target) entry depth = (match find size (fe size entry) cmp target, False, False)
+      evaluate find full (ENewer rsec rnsec) entry depth = (match find newer entry rsec rnsec, False, False)
+      evaluate find full (EPerm pk pmask) entry depth = (match find perm (fe mode entry) pk pmask, False, False)
+      evaluate find full (ELinks cmp target) entry depth = (match find size (fe nlink entry) cmp target, False, False)
+      evaluate find full (EInum target_ino) entry depth = (match find inum entry target_ino, False, False)
+      evaluate find full (ERegex pat) entry depth = (regex match pat against (fe path entry), False, False)
+      evaluate find full (EMaxDepth d) entry depth = (depth <= d, False, False)
+      evaluate find full (EMinDepth d) entry depth = (depth >= d, False, False)
+      evaluate find full EEmpty entry depth = (match find empty entry, False, False)
+      evaluate find full (ENot sub) entry depth =
+        r = evaluate find full sub entry depth
+        (not (tuple3 c1 r), tuple3 c2 r, tuple3 c3 r)
+      evaluate find full (EAnd a b) entry depth =
+        ra = evaluate find full a entry depth
+        eval find and tail (tuple3 c1 ra) (tuple3 c2 ra) (tuple3 c3 ra) b entry depth
+      evaluate find full (EOr a b) entry depth =
+        ra = evaluate find full a entry depth
+        eval find or tail (tuple3 c1 ra) (tuple3 c2 ra) (tuple3 c3 ra) b entry depth
+
+fn :: eval find and tail Bool Bool Bool FindExpr FileEntry Int => Bool Bool Bool
+      eval find and tail False pa pra _ _ _ = (False, pa, pra)
+      eval find and tail True pa pra b entry depth =
+        rb = evaluate find full b entry depth
+        (tuple3 c1 rb, pa or (tuple3 c2 rb), pra or (tuple3 c3 rb))
+
+fn :: eval find or tail Bool Bool Bool FindExpr FileEntry Int => Bool Bool Bool
+      eval find or tail True pa pra _ _ _ = (True, pa, pra)
+      eval find or tail False pa pra b entry depth =
+        rb = evaluate find full b entry depth
+        (tuple3 c1 rb, pa or (tuple3 c2 rb), pra or (tuple3 c3 rb))
+
+op :: evaluate find expr FindExpr on FileEntry at Int   => Bool
+      evaluate find expr expr     on entry     at depth =
+        tuple3 c1 (evaluate find full expr entry depth)
+
+fn :: stat find entry String String Bool => FileEntry
+      stat find entry path bname False = stat file entry path named bname
+      stat find entry path bname True =
+        base_ent = stat file entry path named bname
+        upgrade followed symlink path bname base_ent
+
+fn :: upgrade followed symlink String String FileEntry => FileEntry
+      upgrade followed symlink path bname (Entry n fp FSymLink m nl sz ow gr mt lt) =
+        ks = raw kernel stat path True
+        upgrade symlink kind n fp m nl sz ow gr mt lt ks
+      upgrade followed symlink _ _ ent = ent
+
+fn :: upgrade symlink kind String String Int Int Int String String Int String (Bool, Int, Int, Int, Int, Int, Int, Int, Int, Int) => FileEntry
+      upgrade symlink kind n fp m nl sz ow gr mt lt (False, _, _, _, _, _, _, _, _, _) = Entry n fp FSymLink m nl sz ow gr mt lt
+      upgrade symlink kind n fp m nl sz ow gr mt lt (True, _, knl, km, _, _, ksz, _, kmt, _) =
+        ftype = (km / 4096) % 16
+        fkind = select followed kind ftype
+        Entry n fp fkind (km % 4096) knl ksz ow gr kmt lt
+
+fn :: select followed kind Int => FileKind
+      select followed kind 4   =  FDir
+      select followed kind _   =  FReg
+
+fn :: select find emit Bool Bool Bool => Bool
+      select find emit True _ printed = printed
+      select find emit False expr_ok _ = expr_ok
 
 fn :: walk find tree String Int FindSpec [String] => [String]
       walk find tree path depth spec acc =
@@ -986,17 +1280,33 @@ fn :: walk find tree String Int FindSpec [String] => [String]
 fn :: walk find node String Int FindSpec [String] => [String]
       walk find node path depth spec acc =
         bname = basename of path
-        entry = stat file entry path named bname
-        expr_ok = evaluate find expr (f_expr spec) on entry at depth
-        matched = (depth >= (f_min_depth spec)) and expr_ok
+        entry = stat find entry path bname (f_follow spec)
+        res = evaluate find full (f_expr spec) entry depth
+        expr_ok = tuple3 c1 res
+        pruned = tuple3 c2 res
+        printed = tuple3 c3 res
+        emit_ok = select find emit (f_has_print spec) expr_ok printed
+        matched = (depth >= (f_min_depth spec)) and emit_ok
         acc1 = record find match path matched spec acc
-        descend find children path entry depth spec acc1
+        acc2 = descend find children path entry depth pruned spec acc1
+        _ = delete find if matched path entry (matched and (f_delete spec))
+        acc2
+
+fn :: delete find if matched String FileEntry Bool => Bool
+      delete find if matched _ _ False = False
+      delete find if matched path entry True =
+        | is dir kind (fe kind entry) = sys rmdir path
+        | otherwise                   = sys unlink path
 
 fn :: record find match String Bool FindSpec [String] => [String]
       record find match path False spec acc = acc
       record find match path True spec acc =
-        _ = run find exec (f_exec_cmd spec) path
+        _ = run find single exec (f_exec_cmd spec) (f_exec_plus spec) path
         acc :: [path]
+
+fn :: run find single exec [String] Bool String => Int
+      run find single exec _ True _ = 0
+      run find single exec cmd False path = run find exec cmd path
 
 fn :: resolve find prog String [String] => String
       resolve find prog prog   []       =  prog
@@ -1024,6 +1334,21 @@ fn :: run find exec [String]    String => Int
         sub_args = subst braces list args path []
         run find fork (posix fork) sub_prog ([sub_prog] :: sub_args)
 
+fn :: expand braces batch [String] [String] [String] => [String]
+expand braces batch [] _ acc = acc
+expand braces batch (x:xs) paths acc =
+  | x == "\{\}" = expand braces batch xs paths (acc :: paths)
+        | otherwise   = expand braces batch xs paths (acc :: [x])
+
+fn :: run find exec batch [String] [String] Bool => Int
+      run find exec batch _ [] _ = 0
+      run find exec batch [] _ _ = 0
+      run find exec batch (prog:args) matches False = 0
+      run find exec batch (prog:args) matches True =
+        sub_prog = resolve find cmd prog
+        sub_args = expand braces batch args matches []
+        run find fork (posix fork) sub_prog ([sub_prog] :: sub_args)
+
 fn :: subst braces String String => String
       subst braces tok    path   =
         | tok == "\{\}" = path
@@ -1033,8 +1358,9 @@ fn :: subst braces list [String] String [String] => [String]
       subst braces list [] path acc = acc
       subst braces list (x:xs) path acc = subst braces list xs path (acc :: [subst braces x path])
 
-fn :: descend find children String FileEntry Int FindSpec [String] => [String]
-      descend find children path entry depth spec acc =
+fn :: descend find children String FileEntry Int Bool FindSpec [String] => [String]
+      descend find children path entry depth True spec acc = acc
+      descend find children path entry depth False spec acc =
         | not (is dir kind (fe kind entry)) = acc
         | ((f_max_depth spec) >= 0) and ((depth + 1) > (f_max_depth spec)) = acc
         | otherwise = walk find children list path (list dir path) (depth + 1) spec acc
@@ -1052,15 +1378,19 @@ fn :: walk find roots [String] FindSpec [String] => [String]
         acc1 = walk find tree r 0 spec acc
         walk find roots rest spec acc1
 
+op :: evaluate find FindSpec => String
+      evaluate find spec     =
+        matches = walk find roots (f_paths spec) spec []
+        _ = run find exec batch (f_exec_cmd spec) matches (f_exec_plus spec)
+        format find matches matches (f_print0 spec) ((list len (f_exec_cmd spec)) > 0 or (f_delete spec))
+
 op :: run find [String] => String
       run find args     =
-        spec = parse find args args
-        matches = walk find roots (f_paths spec) spec []
-        format find matches matches (f_print0 spec) (list len (f_exec_cmd spec))
+        evaluate find (parse find args args)
 
-fn :: format find matches [String] Bool Int => String
-      format find matches matches print0 exec_len =
-        | exec_len > 0 = ""
+fn :: format find matches [String] Bool Bool => String
+      format find matches matches print0 suppress =
+        | suppress = ""
         | (list len matches) == 0 = ""
         | print0 = (join with matches (char from code 0)) + (char from code 0)
         | otherwise = (join with matches (char from code 10)) + (char from code 10)
@@ -1070,7 +1400,7 @@ fn :: format find matches [String] Bool Int => String
 -- ============================================================================
 
 fn :: default mtree spec => MtreeSpec
-      default mtree spec =  MtreeSpec False "" "." False ["type", "mode", "size", "sha256", "link"]
+      default mtree spec =  MtreeSpec False "" "." False False False ["type", "mode", "size", "sha256", "link"]
 
 op :: parse mtree args [String] => MtreeSpec
       parse mtree args args     =  parse mtree loop args (default mtree spec)
@@ -1080,6 +1410,8 @@ fn :: parse mtree loop [String]   MtreeSpec => MtreeSpec
       parse mtree loop (arg:rest) spec      =
         | arg == "-c" = parse mtree loop rest (spec with m_create = True)
         | arg == "-u" = parse mtree loop rest (spec with m_update = True)
+        | arg == "-e" = parse mtree loop rest (spec with m_ignore_extra = True)
+        | arg == "-r" = parse mtree loop rest (spec with m_remove_extra = True)
         | arg == "-f" = parse mtree flag f rest spec
         | arg == "-p" = parse mtree flag p rest spec
         | arg == "-K" = parse mtree flag k rest spec
@@ -1171,36 +1503,95 @@ op :: generate mtree spec for String    => String
         lines = walk mtree create root_path "." header
         finalize output lines lines
 
+fn :: parent dir of String => String
+      parent dir of path   =  parent dir loop path ((str len path) - 1)
+
+fn :: parent dir loop String Int => String
+      parent dir loop path   idx =
+        | idx < 0 = "."
+        | (str char at path idx) == 47 = str slice path 0 idx
+        | otherwise = parent dir loop path (idx - 1)
+
+fn :: is dotdot line [String]  => Bool
+      is dotdot line ("..":[]) =  True
+      is dotdot line _         =  False
+
+fn :: lines has dotdot [String]    => Bool
+      lines has dotdot []          =  False
+      lines has dotdot (line:rest) =
+        | is dotdot line (split whitespace line) = True
+        | otherwise                              = lines has dotdot rest
+
 op :: parse mtree spec text String => [MtreeEntry]
       parse mtree spec text raw    =
         lines = split lines raw
-        parse mtree lines lines "file" 420 []
+        use_blocks = lines has dotdot lines
+        parse mtree lines lines "." use_blocks "file" 420 []
 
-fn :: parse mtree lines [String] String Int [MtreeEntry] => [MtreeEntry]
-      parse mtree lines [] def_type def_mode acc = acc
-      parse mtree lines (line:rest) def_type def_mode acc =
+fn :: parse mtree lines [String] String Bool String Int [MtreeEntry] => [MtreeEntry]
+      parse mtree lines [] cur_dir use_blocks def_type def_mode acc = acc
+      parse mtree lines (line:rest) cur_dir use_blocks def_type def_mode acc =
         toks = split whitespace line
-        parse mtree tokens toks rest def_type def_mode acc
+        parse mtree tokens toks rest cur_dir use_blocks def_type def_mode acc
 
-fn :: parse mtree tokens [String] [String] String Int [MtreeEntry] => [MtreeEntry]
-      parse mtree tokens [] rest def_type def_mode acc = parse mtree lines rest def_type def_mode acc
-      parse mtree tokens (first:kvs) rest def_type def_mode acc =
-        | str starts with first "#" = parse mtree lines rest def_type def_mode acc
-        | first == "/set" = apply mtree set kvs rest def_type def_mode acc
-        | first == "/unset" = parse mtree lines rest "file" 420 acc
-        | first == ".." = parse mtree lines rest def_type def_mode acc
-        | otherwise = parse mtree lines rest def_type def_mode (acc :: [build mtree entry first kvs def_type def_mode])
+fn :: parse mtree tokens [String] [String] String Bool String Int [MtreeEntry] => [MtreeEntry]
+      parse mtree tokens [] rest cur_dir use_blocks def_type def_mode acc = parse mtree lines rest cur_dir use_blocks def_type def_mode acc
+      parse mtree tokens (first:kvs) rest cur_dir use_blocks def_type def_mode acc =
+        | str starts with first "#" = parse mtree lines rest cur_dir use_blocks def_type def_mode acc
+        | first == "/set" = apply mtree set kvs rest cur_dir use_blocks def_type def_mode acc
+        | first == "/unset" = apply mtree unset kvs rest cur_dir use_blocks def_type def_mode acc
+        | first == ".." = parse mtree lines rest (parent dir of cur_dir) use_blocks def_type def_mode acc
+        | otherwise =
+          rel_name = resolve mtree rel cur_dir first use_blocks
+          ent = build mtree entry rel_name kvs def_type def_mode
+          next_dir = advance mtree dir cur_dir first (me_type ent) use_blocks
+          (parse mtree lines rest next_dir use_blocks def_type def_mode (acc :: [ent]))
 
-fn :: apply mtree set [String] [String] String Int [MtreeEntry] => [MtreeEntry]
-      apply mtree set [] rest def_type def_mode acc = parse mtree lines rest def_type def_mode acc
-      apply mtree set (kv:more) rest def_type def_mode acc =
-        | str starts with kv "type=" = apply mtree set more rest (str slice kv 5 (str len kv)) def_mode acc
-        | str starts with kv "mode=" = apply mtree set more rest def_type (octal str to int (str slice kv 5 (str len kv))) acc
-        | otherwise = apply mtree set more rest def_type def_mode acc
+fn :: resolve mtree rel String String Bool => String
+      resolve mtree rel _ "." _ = "."
+      resolve mtree rel _ first False = first
+      resolve mtree rel cur_dir first True =
+        | str contains first "/" = first
+        | otherwise              = join clean path cur_dir first
+
+fn :: advance mtree dir String String String Bool => String
+      advance mtree dir cur_dir _ _ False = cur_dir
+      advance mtree dir cur_dir "." _ True = cur_dir
+      advance mtree dir cur_dir first "dir" True =
+        | str contains first "/" = cur_dir
+        | otherwise              = join clean path cur_dir first
+      advance mtree dir cur_dir _ _ True = cur_dir
+
+fn :: apply mtree set [String] [String] String Bool String Int [MtreeEntry] => [MtreeEntry]
+      apply mtree set [] rest cur_dir use_blocks def_type def_mode acc = parse mtree lines rest cur_dir use_blocks def_type def_mode acc
+      apply mtree set (kv:more) rest cur_dir use_blocks def_type def_mode acc =
+        | str starts with kv "type=" = apply mtree set more rest cur_dir use_blocks (str slice kv 5 (str len kv)) def_mode acc
+        | str starts with kv "mode=" = apply mtree set more rest cur_dir use_blocks def_type (octal str to int (str slice kv 5 (str len kv))) acc
+        | otherwise = apply mtree set more rest cur_dir use_blocks def_type def_mode acc
+
+fn :: apply mtree unset [String] [String] String Bool String Int [MtreeEntry] => [MtreeEntry]
+      apply mtree unset [] rest cur_dir use_blocks def_type def_mode acc = parse mtree lines rest cur_dir use_blocks "file" (0 - 1) acc
+      apply mtree unset (kw:more) rest cur_dir use_blocks def_type def_mode acc =
+        | (kw == "all") = parse mtree lines rest cur_dir use_blocks "file" (0 - 1) acc
+        | (kw == "type") = apply mtree unset more rest cur_dir use_blocks "file" def_mode acc
+        | (kw == "mode") = apply mtree unset more rest cur_dir use_blocks def_type (0 - 1) acc
+        | otherwise = apply mtree unset more rest cur_dir use_blocks def_type def_mode acc
+
+fn :: has kv prefix [String]  String => Bool
+      has kv prefix []        _      =  False
+      has kv prefix (kv:rest) pfx    =
+        | str starts with kv pfx = True
+        | otherwise              = has kv prefix rest pfx
 
 fn :: build mtree entry String [String] String Int => MtreeEntry
       build mtree entry rel kvs def_type def_mode =
-        apply entry kvs kvs (MtreeEntry rel def_type def_mode (0 - 1) "" "")
+        base_ent = apply entry kvs kvs (MtreeEntry rel def_type def_mode (0 - 1) "" "")
+        clear mismatched dir mode base_ent kvs def_type
+
+fn :: clear mismatched dir mode MtreeEntry [String] String => MtreeEntry
+      clear mismatched dir mode ent kvs def_type =
+        | ((me_type ent) != def_type) and (not (has kv prefix kvs "mode=")) = ent with me_mode = (0 - 1)
+        | otherwise = ent
 
 fn :: apply entry kvs [String]  MtreeEntry => MtreeEntry
       apply entry kvs []        ent        =  ent
@@ -1250,11 +1641,12 @@ fn :: verify lstat result MtreeEntry String (Bool, String, Int, Int, Int, String
 fn :: heal missing dir MtreeEntry String Bool => Int
       heal missing dir spec_ent full_p False = 0
       heal missing dir spec_ent full_p True =
-        | (me_type spec_ent) == "dir" = sys mkdir full_p (me_mode spec_ent)
+        | (me_type spec_ent) == "dir" = sys mkdir full_p (max int 493 (me_mode spec_ent))
         | otherwise = 0
 
 fn :: check mode diff MtreeEntry String Int Bool [String] => [String]
       check mode diff spec_ent full_p actual_mode update acc =
+        | (me_mode spec_ent) < 0 = acc
         | (me_mode spec_ent) == actual_mode = acc
         | otherwise =
           _ = heal mode diff full_p (me_mode spec_ent) update
@@ -1299,10 +1691,42 @@ fn :: find extra entries [String] [MtreeEntry] [String] => [String]
         | has spec rel spec_entries rel = find extra entries rest spec_entries acc
         | otherwise = find extra entries rest spec_entries (acc :: [rel + ": extra"])
 
+fn :: remove extra entries [String] [MtreeEntry] String => ()
+      remove extra entries [] _ _ = ()
+      remove extra entries (rel:rest) spec_entries root_path =
+        | has spec rel spec_entries rel = remove extra entries rest spec_entries root_path
+        | otherwise =
+          full_p = resolve mtree full root_path rel
+          _ = sys unlink full_p
+          _ = sys rmdir full_p
+          remove extra entries rest spec_entries root_path
+
 op :: verify mtree [MtreeEntry] against String    update Bool => [String]
       verify mtree spec_entries against root_path update upd  =
         spec_diffs = verify spec entries spec_entries root_path upd []
         live_rels = collect live rels root_path "." []
+        extra_diffs = find extra entries live_rels spec_entries []
+        spec_diffs :: extra_diffs
+
+op :: verify mtree String   at String    update Bool => Bool [String]
+      verify mtree raw_spec at root_path update upd  =
+        entries = parse mtree spec text raw_spec
+        diffs = verify mtree entries against root_path update upd
+        ((list len diffs) == 0, diffs)
+
+op :: verify mtree full [MtreeEntry] with MtreeSpec => [String]
+      verify mtree full spec_entries with spec      =
+        root_path = m_path spec
+        spec_diffs = verify spec entries spec_entries root_path (m_update spec) []
+        live_rels = collect live rels root_path "." []
+        handle mtree extras live_rels spec_entries root_path (m_ignore_extra spec) (m_remove_extra spec) spec_diffs
+
+fn :: handle mtree extras [String] [MtreeEntry] String Bool Bool [String] => [String]
+      handle mtree extras live_rels spec_entries root_path True False spec_diffs = spec_diffs
+      handle mtree extras live_rels spec_entries root_path _ True spec_diffs =
+        _ = remove extra entries live_rels spec_entries root_path
+        spec_diffs
+      handle mtree extras live_rels spec_entries root_path False False spec_diffs =
         extra_diffs = find extra entries live_rels spec_entries []
         spec_diffs :: extra_diffs
 
@@ -1388,8 +1812,8 @@ fn :: create mktemp file String => Bool
 
 fn :: create mktemp dir String => Bool
       create mktemp dir path   =
-        | not (posix mkdir path) = False
-        | otherwise              = posix chmod path 448
+        | (sys mkdir path 448) != 0 = False
+        | otherwise                 = posix chmod path 448
 
 fn :: dispatch mktemp cand MktempSpec String => Bool String
       dispatch mktemp cand spec       cand   =

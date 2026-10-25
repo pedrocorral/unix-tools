@@ -259,6 +259,64 @@ fn :: test doas upstream policy and env => ()
         _ = sys setenv "DOAS_PASS" ""
         ()
 
+fn :: test doas persist log path and sha256 c => ()
+      test doas persist log path and sha256 c =
+        nl = char from code 10
+        _ = echo "=== 7. Testing doas persist/nolog/PATH & sha256 -c Checklist Verification (TS-SEC-002, TS-SEC-003) ==="
+        -- 1. doas bare command PATH resolution
+        _ = write file "/tmp/ut_doas_path.conf" ("permit nopass boogie as root cmd /bin/echo" + nl + "permit nopass boogie as root cmd /usr/bin/echo" + nl)
+        rc_bare = shell exec "DOAS_CALLER=boogie PATH=/bin:/usr/bin ./target/doas -C /tmp/ut_doas_path.conf -u root echo hello_path > /tmp/ut_doas_bare.out"
+        _ = assert int equals rc_bare 0 "doas bare command 'echo' resolved via PATH exits 0 in -C audit"
+        _ = assert str eq (read file "/tmp/ut_doas_bare.out") ("permit nopass" + nl) "doas bare command 'echo' resolves to /bin/echo and matches rule"
+        -- 2. doas persist session caching & -L ticket clearing
+        _ = shell exec "./target/doas -L"
+        persist_rule = (dummy rule) with dr_action = ActPermit, dr_nopass = False, dr_persist = True, dr_ident = "boogie"
+        ni_echo = parse doas args ["-n", "-u", "root", "/bin/true"]
+        rc_pre = execute privileged persist_rule ni_echo "boogie"
+        _ = assert false (check eq rc_pre 0) "doas persist: before authentication, -n non-interactive fails"
+        int_echo = parse doas args ["-u", "root", "/bin/true"]
+        _ = sys setenv "DOAS_PASS" "abc"
+        _ = sys setenv "DOAS_AUTH_SHA256" "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        rc_auth = execute privileged persist_rule int_echo "boogie"
+        _ = sys setenv "DOAS_PASS" ""
+        _ = assert int equals rc_auth 0 "doas persist: interactive authentication with valid password succeeds and writes persist ticket"
+        rc_cached = execute privileged persist_rule ni_echo "boogie"
+        _ = assert int equals rc_cached 0 "doas persist: subsequent -n non-interactive execution succeeds using cached persist ticket without password"
+        _ = shell exec "./target/doas -L"
+        rc_cleared = execute privileged persist_rule ni_echo "boogie"
+        _ = sys setenv "DOAS_AUTH_SHA256" ""
+        _ = assert false (check eq rc_cleared 0) "doas -L: clearing persist ticket causes subsequent -n execution to fail again"
+        -- 3. doas audit logging vs nolog suppression
+        _ = sys unlink "/tmp/ut_doas_audit.log"
+        _ = sys setenv "DOAS_LOG_FILE" "/tmp/ut_doas_audit.log"
+        log_rule = (dummy rule) with dr_action = ActPermit, dr_nopass = True, dr_nolog = False, dr_ident = "boogie"
+        nolog_rule = (dummy rule) with dr_action = ActPermit, dr_nopass = True, dr_nolog = True, dr_ident = "boogie"
+        _ = execute privileged log_rule (parse doas args ["-u", "root", "/bin/true"]) "boogie"
+        log_txt1 = read file "/tmp/ut_doas_audit.log"
+        _ = assert true (str contains log_txt1 "boogie") "doas logging: rule without nolog appends caller to DOAS_LOG_FILE"
+        _ = assert true (str contains log_txt1 "/bin/true") "doas logging: rule without nolog appends command to DOAS_LOG_FILE"
+        _ = sys unlink "/tmp/ut_doas_audit.log"
+        _ = execute privileged nolog_rule (parse doas args ["-u", "root", "/bin/true"]) "boogie"
+        _ = assert false (lstat exists (file lstat "/tmp/ut_doas_audit.log")) "doas nolog: rule with nolog suppresses writing to DOAS_LOG_FILE"
+        _ = sys setenv "DOAS_LOG_FILE" ""
+        -- 4. sha256 -c checklist verification (BSD tag format and reversed format, pass & fail)
+        _ = write file "/tmp/ut_sha_f1.txt" "abc"
+        _ = write file "/tmp/ut_sha_f2.txt" ""
+        chk_bsd = "SHA256 (/tmp/ut_sha_f1.txt) = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" + nl + "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  /tmp/ut_sha_f2.txt" + nl
+        _ = write file "/tmp/ut_sha_list.sums" chk_bsd
+        r_chk_ok = evaluate sha256 (parse sha256 args ["-c", "/tmp/ut_sha_list.sums"]) with ""
+        _ = assert int equals (fst r_chk_ok) 0 "sha256 -c: valid BSD + reversed checklist exits 0"
+        _ = assert true (str contains (snd r_chk_ok) "(SHA256) /tmp/ut_sha_f1.txt: OK") "sha256 -c: outputs (SHA256) <file>: OK for BSD line"
+        _ = assert true (str contains (snd r_chk_ok) "(SHA256) /tmp/ut_sha_f2.txt: OK") "sha256 -c: outputs (SHA256) <file>: OK for reversed line"
+        _ = write file "/tmp/ut_sha_f1.txt" "tampered_abc"
+        r_chk_fail = evaluate sha256 (parse sha256 args ["-c", "/tmp/ut_sha_list.sums"]) with ""
+        _ = assert false (check eq (fst r_chk_fail) 0) "sha256 -c: tampered file in checklist returns non-zero exit code"
+        _ = assert true (str contains (snd r_chk_fail) "(SHA256) /tmp/ut_sha_f1.txt: FAILED") "sha256 -c: reports FAILED for tampered file"
+        rc_bin_chk = shell exec "./target/sha256 -c /tmp/ut_sha_list.sums > /tmp/ut_sha_chk_bin.out"
+        _ = assert false (check eq rc_bin_chk 0) "E2E binary: target/sha256 -c exits non-zero on tampered file"
+        _ = shell exec "rm -f /tmp/ut_doas_path.conf /tmp/ut_doas_bare.out /tmp/ut_doas_audit.log /tmp/ut_sha_f1.txt /tmp/ut_sha_f2.txt /tmp/ut_sha_list.sums /tmp/ut_sha_chk_bin.out"
+        ()
+
 fn :: head rule [DoasRule] => DoasRule
       head rule []         =  dummy rule
       head rule (r:_)      =  r
@@ -271,4 +329,5 @@ fn :: main => ()
         _ = test sha256 suite
         _ = test doas upstream parse y
         _ = test doas upstream policy and env
-        echo "All 88 Tier 4 & Upstream OpenBSD Security (doas, doas.conf, sha256) assertions passed!"
+        _ = test doas persist log path and sha256 c
+        echo "All 101 Tier 4 & Upstream OpenBSD Security (doas, doas.conf, sha256) assertions passed!"

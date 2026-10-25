@@ -15,6 +15,7 @@ fn :: read unvis files [String] => String
 fn :: main => ()
       main =
         args = drop prog (cli args)
-        raw = read unvis files args
-        result = unvis decode bytes raw
+        spec = parse unvis args args
+        raw = read unvis files (v_files spec)
+        result = unvis decode bytes with raw spec
         write bytes "/dev/stdout" result
